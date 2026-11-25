@@ -52,7 +52,28 @@ jobs:
           name: macos-artifacts
           path: artifacts/*
 
+  build-windows-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MinGW-w64 & build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 nasm make curl xz-utils unzip
+
+      - name: Fetch & cross-compile Windows media tools
+        run: ./scripts/fetch-tools.sh windows-amd64
+
+      - name: Upload Windows resources
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-resources
+          path: resources/windows-amd64
+
   build-windows:
+    needs: build-windows-tools
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -63,9 +84,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Fetch bundled media tools
-        shell: bash
-        run: ./scripts/fetch-tools.sh windows-amd64
+      - name: Download Windows resources
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-resources
+          path: resources/windows-amd64
 
       - name: Build Windows (amd64)
         run: go tool mygo build -platform windows/amd64
@@ -88,7 +111,19 @@ jobs:
           path: artifacts/*
 
   build-linux:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-amd64
+            arch: amd64
+            mygo_platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux-arm64
+            arch: arm64
+            mygo_platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -98,37 +133,40 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Fetch bundled media tools
+      - name: Build static ffmpeg in Alpine container
         run: |
-          ./scripts/fetch-tools.sh linux-amd64
-          ./scripts/fetch-tools.sh linux-arm64
+          docker run --rm -v "$PWD:/work" -w /work alpine:latest sh -c "
+            apk add --no-cache bash curl xz tar make gcc musl-dev nasm openssl-dev openssl-libs-static pkgconf &&
+            ./scripts/build-ffmpeg.sh ${{ matrix.platform }}
+          "
+
+      - name: Fetch remaining media tools (yt-dlp, QuickJS)
+        run: ./scripts/fetch-tools.sh ${{ matrix.platform }}
 
       - name: Run tests
         run: go test ./...
 
-      - name: Build Linux (amd64 & arm64)
-        run: go tool mygo build -platform linux/amd64,linux/arm64
+      - name: Build Linux (${{ matrix.arch }})
+        run: go tool mygo build -platform ${{ matrix.mygo_platform }}
 
       - name: Collect Linux artifacts
         run: |
           mkdir -p artifacts
-          for arch in amd64 arm64; do
-            dir="build/linux-$arch"
-            ls -la "$dir"
-            find "$dir" -maxdepth 1 -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.AppImage" -o -name "*.flatpak" \) -exec cp {} artifacts/ \;
-            if [ -f "$dir/install.sh" ]; then
-              cp "$dir/install.sh" "artifacts/install-linux-$arch.sh"
-            fi
-            if [ -f "$dir/PKGBUILD" ]; then
-              cp "$dir/PKGBUILD" "artifacts/PKGBUILD-linux-$arch"
-            fi
-          done
+          dir="build/${{ matrix.platform }}"
+          ls -la "$dir"
+          find "$dir" -maxdepth 1 -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.AppImage" -o -name "*.flatpak" \) -exec cp {} artifacts/ \;
+          if [ -f "$dir/install.sh" ]; then
+            cp "$dir/install.sh" "artifacts/install-linux-${{ matrix.arch }}.sh"
+          fi
+          if [ -f "$dir/PKGBUILD" ]; then
+            cp "$dir/PKGBUILD" "artifacts/PKGBUILD-linux-${{ matrix.arch }}"
+          fi
           ls -lh artifacts/
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-artifacts
+          name: linux-artifacts-${{ matrix.arch }}
           path: artifacts/*
 
   release:
