@@ -1,0 +1,385 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"log"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"time"
+
+	"github.com/egoist/mygo/ui"
+
+	"github.com/EchoMusicApp/Echo-Music/internal/offline"
+	"github.com/EchoMusicApp/Echo-Music/internal/m3"
+	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+)
+
+const downloadTimeout = 30 * time.Minute
+
+type downloads struct {
+	dir     string
+	lib     offline.Library
+	writer  offline.Writer
+	queue   []pendingSong
+	active  pendingSong
+	job     task
+	release func()
+	version int
+}
+
+type pendingSong struct {
+	item   youtube.MusicItem
+	single bool
+}
+
+func (a *app) openDownloads(dir string) {
+	a.downloads.dir = dir
+	a.downloads.lib = offline.Read(dir)
+	a.downloads.version++
+}
+
+func (a *app) downloaded(videoID string) string {
+	d := &a.downloads
+	song, ok := d.lib.Song(videoID)
+	if !ok || d.dir == "" {
+		return ""
+	}
+	return filepath.Join(d.dir, song.File)
+}
+
+func (a *app) isDownloaded(videoID string) bool {
+	_, ok := a.downloads.lib.Song(videoID)
+	return ok
+}
+
+func (a *app) downloading(videoID string) bool {
+	d := &a.downloads
+	if d.job.busy() && d.active.item.VideoID == videoID {
+		return true
+	}
+	return slices.ContainsFunc(d.queue, func(p pendingSong) bool { return p.item.VideoID == videoID })
+}
+
+func (a *app) canDownload(item youtube.MusicItem) bool {
+	return a.downloads.dir != "" && item.VideoID != "" && item.IsTrack()
+}
+
+func (a *app) downloadSong(item youtube.MusicItem) {
+	a.queueDownloads([]youtube.MusicItem{item}, true)
+}
+
+func (a *app) downloadCollection(item youtube.MusicItem, tracks []youtube.MusicItem) {
+	d := &a.downloads
+	if d.dir == "" || len(tracks) == 0 {
+		return
+	}
+	songs := make([]youtube.MusicItem, 0, len(tracks))
+	ids := make([]string, 0, len(tracks))
+	for _, track := range tracks {
+		if track.VideoID == "" || slices.Contains(ids, track.VideoID) {
+			continue
+		}
+		if track.Thumbnail == "" {
+			track.Thumbnail = item.Thumbnail
+		}
+		songs = append(songs, track)
+		ids = append(ids, track.VideoID)
+	}
+	d.lib.AddCollection(offline.Collection{Item: item, Tracks: ids})
+	a.saveDownloads()
+	a.queueDownloads(songs, false)
+}
+
+func (a *app) syncCollectionDownload(p *pageData, r *route, id string) {
+	d := &a.downloads
+	if d.dir == "" || (r.id != routeAlbum && r.id != routePlaylist) || p.feed.loading || p.feed.err != "" {
+		return
+	}
+	collection, ok := d.lib.Collection(id)
+	if !ok {
+		return
+	}
+	tracks := pageTracks(p.feed)
+	ids := make([]string, 0, len(tracks)+len(collection.Tracks))
+	var added []youtube.MusicItem
+	for _, track := range tracks {
+		if track.VideoID == "" || !track.IsTrack() || slices.Contains(ids, track.VideoID) {
+			continue
+		}
+		ids = append(ids, track.VideoID)
+		if slices.Contains(collection.Tracks, track.VideoID) {
+			continue
+		}
+		if track.Thumbnail == "" {
+			track.Thumbnail = collection.Item.Thumbnail
+		}
+		added = append(added, track)
+	}
+	if len(added) == 0 {
+		return
+	}
+	for _, videoID := range collection.Tracks {
+		if !slices.Contains(ids, videoID) {
+			ids = append(ids, videoID)
+		}
+	}
+	d.lib.SetCollectionTracks(id, ids)
+	a.saveDownloads()
+	a.queueDownloads(added, false)
+}
+
+func pageTracks(feed pageState) []youtube.MusicItem {
+	sections := feed.sections
+	if len(sections) == 0 {
+		sections = []youtube.MusicSection{{Items: feed.items}}
+	}
+	var tracks []youtube.MusicItem
+	for _, section := range sections {
+		for _, item := range section.Items {
+			if item.IsTrack() {
+				tracks = append(tracks, item)
+			}
+		}
+	}
+	return tracks
+}
+
+func (a *app) queueDownloads(items []youtube.MusicItem, single bool) {
+	d := &a.downloads
+	if d.dir == "" {
+		return
+	}
+	for _, item := range items {
+		if !a.canDownload(item) {
+			continue
+		}
+		if song, ok := d.lib.Song(item.VideoID); ok {
+			if single && !song.Single {
+				song.Single = true
+				d.lib.Add(song)
+				a.saveDownloads()
+			}
+			continue
+		}
+		if i := slices.IndexFunc(d.queue, func(p pendingSong) bool { return p.item.VideoID == item.VideoID }); i >= 0 {
+			d.queue[i].single = d.queue[i].single || single
+			continue
+		}
+		if d.job.busy() && d.active.item.VideoID == item.VideoID {
+			d.active.single = d.active.single || single
+			continue
+		}
+		d.queue = append(d.queue, pendingSong{item: item, single: single})
+	}
+	a.nextDownload()
+}
+
+func (a *app) holdDownloadPower() {
+	d := &a.downloads
+	running := d.job.busy() || d.active.item.VideoID != "" || len(d.queue) > 0
+	switch {
+	case running && d.release == nil:
+		d.release = a.keepRunning("Downloading songs")
+	case !running && d.release != nil:
+		d.release()
+		d.release = nil
+	}
+}
+
+func (a *app) nextDownload() {
+	d := &a.downloads
+	if d.job.busy() || len(d.queue) == 0 {
+		a.holdDownloadPower()
+		return
+	}
+	d.active = d.queue[0]
+	d.queue = slices.Delete(d.queue, 0, 1)
+	a.holdDownloadPower()
+	item, dir, streams := d.active.item, d.dir, a.streams
+	startTask(a, &d.job, downloadTimeout, func(ctx context.Context) (string, error) {
+		url, _, err := streams.Get(ctx, item.VideoID)
+		if err != nil {
+			return "", err
+		}
+		file, err := offline.Download(ctx, dir, item.VideoID, url)
+		if err != nil {
+			streams.Forget(item.VideoID)
+		}
+		return file, err
+	}, func(file string, err error) {
+		single := d.active.single
+		d.active = pendingSong{}
+		if err != nil {
+			log.Printf("downloads: could not download video_id=%s: %v", item.VideoID, err)
+			a.notice = "Could not download “" + item.Title + "”"
+		} else {
+			d.lib.Add(offline.Song{Item: item, File: file, Single: single})
+			a.saveDownloads()
+		}
+		a.nextDownload()
+	})
+}
+
+func (a *app) removeDownload(videoID string) {
+	d := &a.downloads
+	d.queue = slices.DeleteFunc(d.queue, func(p pendingSong) bool { return p.item.VideoID == videoID })
+	if d.job.busy() && d.active.item.VideoID == videoID {
+		d.job.stop()
+		d.active = pendingSong{}
+		a.nextDownload()
+	}
+	if file, ok := d.lib.Remove(videoID); ok {
+		a.deleteDownloadFiles([]string{file})
+		a.saveDownloads()
+	}
+	a.nextDownload()
+}
+
+func (a *app) removeCollectionDownload(id string) {
+	d := &a.downloads
+	collection, ok := d.lib.Collection(id)
+	if !ok {
+		return
+	}
+	files := d.lib.RemoveCollection(id)
+	unwanted := func(p pendingSong) bool {
+		return !p.single && slices.Contains(collection.Tracks, p.item.VideoID) && !d.lib.InCollection(p.item.VideoID)
+	}
+	d.queue = slices.DeleteFunc(d.queue, unwanted)
+	if d.job.busy() && unwanted(d.active) {
+		d.job.stop()
+		d.active = pendingSong{}
+		a.nextDownload()
+	}
+	a.deleteDownloadFiles(files)
+	a.saveDownloads()
+	a.nextDownload()
+}
+
+func (a *app) collectionDownload(id string) (done, total int, saved, busy bool) {
+	d := &a.downloads
+	collection, ok := d.lib.Collection(id)
+	if !ok {
+		return 0, 0, false, false
+	}
+	for _, videoID := range collection.Tracks {
+		if _, ok := d.lib.Song(videoID); ok {
+			done++
+		} else if a.downloading(videoID) {
+			busy = true
+		}
+	}
+	return done, len(collection.Tracks), true, busy
+}
+
+func (a *app) deleteDownloadFiles(files []string) {
+	dir := a.downloads.dir
+	if len(files) == 0 || dir == "" {
+		return
+	}
+	a.run(func() {
+		for _, file := range files {
+			if err := os.Remove(filepath.Join(dir, file)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Printf("downloads: removing %s: %v", file, err)
+			}
+		}
+	})
+}
+
+func (a *app) saveDownloads() {
+	d := &a.downloads
+	d.version++
+	d.writer.Save(d.dir, d.lib)
+}
+
+func (a *app) offlinePage(id string) (*youtube.BrowseResult, bool) {
+	d := &a.downloads
+	collection, ok := d.lib.Collection(id)
+	if !ok {
+		return nil, false
+	}
+	return &youtube.BrowseResult{
+		Title:     collection.Item.Title,
+		Thumbnail: collection.Item.Thumbnail,
+		Items:     d.lib.Tracks(collection),
+	}, true
+}
+
+func (a *app) syncDownloadsPage() {
+	d := &a.downloads
+	p := a.page
+	if p.downloads == d.version && !p.loadedAt.IsZero() {
+		return
+	}
+	p.downloads, p.loadedAt, p.rowsDirty = d.version, time.Now(), true
+	var sections []youtube.MusicSection
+	if len(d.lib.Collections) > 0 {
+		items := make([]youtube.MusicItem, len(d.lib.Collections))
+		for i, collection := range d.lib.Collections {
+			items[i] = collection.Item
+		}
+		sections = append(sections, youtube.MusicSection{Title: "Albums and playlists", Items: items})
+	}
+	if len(d.lib.Songs) > 0 {
+		items := make([]youtube.MusicItem, len(d.lib.Songs))
+		for i, song := range d.lib.Songs {
+			items[i] = song.Item
+		}
+		sections = append(sections, youtube.MusicSection{Title: "Songs", Items: items})
+	}
+	p.feed = pageState{sections: sections}
+}
+
+type pageDownloadState struct {
+	label          string
+	icon           *ui.SVG
+	kind           m3.ButtonKind
+	disabled       bool
+	busy, complete bool
+}
+
+func (a *app) pageDownload() (pageDownloadState, string, bool) {
+	r, id := a.route()
+	if a.downloads.dir == "" || r.id != routeAlbum && r.id != routePlaylist {
+		return pageDownloadState{}, "", false
+	}
+	done, total, saved, busy := a.collectionDownload(id)
+	complete := saved && done == total
+	state := pageDownloadState{label: "Download", icon: m3.IconDownload, kind: m3.Tonal, busy: busy, complete: complete}
+	switch {
+	case busy:
+		state.label = "Downloading " + strconv.Itoa(done) + "/" + strconv.Itoa(total)
+		state.kind = m3.Outlined
+	case complete:
+		state.label, state.icon, state.kind = "Downloaded", m3.IconDownloadDone, m3.Outlined
+	}
+	state.disabled = !busy && !complete && (len(a.page.playable) == 0 || a.pageSimilar.busy() || a.page.feed.loading)
+	return state, id, true
+}
+
+func (a *app) togglePageDownload(id string, state pageDownloadState) {
+	if state.busy || state.complete {
+		a.removeCollectionDownload(id)
+		return
+	}
+	r, _ := a.route()
+	kindOf := youtube.KindPlaylist
+	if r.id == routeAlbum {
+		kindOf = youtube.KindAlbum
+	}
+	d := a.page.detail
+	a.downloadCollection(youtube.MusicItem{BrowseID: id, Title: d.title, Subtitle: d.subtitle, Thumbnail: d.art, Kind: kindOf}, a.page.playable)
+}
+
+func (a *app) downloadButton(c *ui.Context) {
+	state, id, ok := a.pageDownload()
+	if !ok {
+		return
+	}
+	if m3.Button(c, m3.ButtonSpec{Label: state.label, Icon: state.icon, Kind: state.kind, Size: a.heroButtonSize(), Disabled: state.disabled, Key: "hero-download"}).Clicked() {
+		a.togglePageDownload(id, state)
+	}
+}

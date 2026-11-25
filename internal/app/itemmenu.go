@@ -1,0 +1,287 @@
+package app
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/EchoMusicApp/Echo-Music/internal/m3"
+	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+)
+
+type itemMenu struct {
+	open        bool
+	key         string
+	suppressKey string
+	atPointer   bool
+	x, y        float32
+	copying     bool
+}
+
+func (m *itemMenu) opened(key string) bool { return m.open && m.key == key }
+
+func (m *itemMenu) owns(key string) bool { return m.key == key }
+
+func (m *itemMenu) show(key string, atPointer bool, x, y float32) {
+	m.key, m.open, m.atPointer, m.copying = key, true, atPointer, false
+	if atPointer {
+		m.x, m.y = x, y
+	}
+}
+
+func (m *itemMenu) close() { m.open = false }
+
+func (m *itemMenu) pointerAnchor(c *ui.Context, key string) (ui.Element, bool) {
+	if !m.atPointer || m.key != key {
+		return ui.Element{}, false
+	}
+	return ui.Box(c).Size(0, 0).Attach(ui.AnchorTopLeft, ui.AnchorTopLeft).Left(m.x).Top(m.y), true
+}
+
+func (m *itemMenu) anchor(button, pointer ui.Element, hasPointer bool) ui.Element {
+	if m.atPointer && hasPointer {
+		return pointer
+	}
+	return button
+}
+
+func (a *app) cardMenu(c *ui.Context, anchor ui.Element, key string, item youtube.MusicItem, queue []youtube.MusicItem) {
+	if !a.menu.owns(key) {
+		return
+	}
+	a.rememberCover(strings.TrimSuffix(key, "-menu"), item)
+	target := item.Target()
+	if target.Kind == youtube.TargetTrack {
+		a.songMenu(c, anchor, key, item, songOptions{})
+		return
+	}
+	m3.Menu(c, anchor, &a.menu.open, 232, func() {
+		close := func() { a.menu.close() }
+		label := ""
+		icon := m3.IconChevronRight
+		switch target.Kind {
+		case youtube.TargetAlbum:
+			label, icon = "Open album", m3.IconAlbum
+		case youtube.TargetPlaylist:
+			label, icon = "Open playlist", m3.IconQueue
+		case youtube.TargetArtist:
+			label, icon = "Go to artist", m3.IconPerson
+		case youtube.TargetPodcast:
+			label = "Open podcast"
+		case youtube.TargetTrack, youtube.TargetNone:
+		}
+		if label != "" && m3.MenuItem(c, label, icon).Clicked() {
+			a.activate(item, queue)
+			close()
+		}
+		if target.Kind == youtube.TargetPlaylist && m3.MenuItem(c, "Shuffle play", m3.IconShuffle).Clicked() {
+			a.playCollection(item, key, true)
+			close()
+		}
+		if library := item.InLibrary(); a.canSave(library) {
+			label, icon := libraryLabel(library)
+			if m3.MenuItem(c, label, icon).Clicked() {
+				a.toggleLibrary(library, item.Title)
+				close()
+			}
+		}
+		if (target.Kind == youtube.TargetAlbum || target.Kind == youtube.TargetPlaylist) && m3.MenuItem(c, "Start radio", m3.IconShuffle).Clicked() {
+			a.startRadio(item, key)
+			close()
+		}
+		if (target.Kind == youtube.TargetAlbum || target.Kind == youtube.TargetPlaylist) && a.downloads.dir != "" {
+			if _, _, saved, _ := a.collectionDownload(target.ID); saved {
+				if m3.MenuItem(c, "Remove download", m3.IconDelete).Clicked() {
+					a.removeCollectionDownload(target.ID)
+					close()
+				}
+			} else if m3.MenuItem(c, "Download", m3.IconDownload).Clicked() {
+				a.withCollectionTracks(item, key, true, func(songs []youtube.MusicItem, _ string) { a.downloadCollection(item, songs) })
+				close()
+			}
+		}
+		if target.ID != "" && m3.MenuItem(c, "Copy link", m3.IconCopy).Clicked() {
+			c.WriteClipboard(youtube.BrowseURL(target.ID))
+			c.Toast("Link copied")
+			close()
+		}
+		if target.Kind == youtube.TargetPlaylist && m3.MenuItem(c, "Delete playlist", m3.IconDelete).Clicked() {
+			a.askDeletePlaylist(target.ID, item.Title)
+			close()
+		}
+	})
+}
+
+func (a *app) songMenu(c *ui.Context, anchor ui.Element, key string, item youtube.MusicItem, o songOptions) {
+	if !a.menu.owns(key) {
+		return
+	}
+	m3.Menu(c, anchor, &a.menu.open, 232, func() {
+		close := func() { a.menu.close() }
+		entry := func(label string, icon *ui.SVG) ui.Element {
+			return m3.MenuItem(c, label, icon).Height(40)
+		}
+		if a.menu.copying {
+			a.copyMenuPage(c, entry, item, close)
+			return
+		}
+		if artistID := item.ArtistID(); artistID != "" {
+			if entry("Go to artist", m3.IconPerson).Clicked() {
+				a.openTarget(youtube.Target{Kind: youtube.TargetArtist, ID: artistID}, detail{})
+				close()
+			}
+		}
+		if o.list == "queue" {
+			a.queueMenuItems(o.position, entry, close)
+		} else {
+			if entry("Play next", m3.IconNext).Clicked() {
+				a.enqueue(item, true)
+				close()
+			}
+			if entry("Add to queue", m3.IconQueue).Clicked() {
+				a.enqueue(item, false)
+				close()
+			}
+		}
+		if a.canLike(item) {
+			label, icon := likeLabel(item)
+			if entry(label, icon).Clicked() {
+				a.toggleLike(item)
+				close()
+			}
+			label = "Dislike"
+			if item.Like == youtube.Disliked {
+				label = "Remove dislike"
+			}
+			if entry(label, m3.IconThumbDown).Clicked() {
+				a.toggleRating(item, youtube.Disliked)
+				close()
+			}
+		}
+		if entry("Start radio", m3.IconShuffle).Clicked() {
+			a.startRadio(item, key)
+			close()
+		}
+		if item.VideoID != "" && entry("Add to playlist", m3.IconLibrary).Clicked() {
+			a.openAddToPlaylist(item)
+			close()
+		}
+		if a.canDownload(item) {
+			if a.isDownloaded(item.VideoID) || a.downloading(item.VideoID) {
+				if entry("Remove download", m3.IconDelete).Clicked() {
+					a.removeDownload(item.VideoID)
+					close()
+				}
+			} else if entry("Download", m3.IconDownload).Clicked() {
+				a.downloadSong(item)
+				close()
+			}
+		}
+		if r, playlistID := a.route(); item.VideoID != "" && item.PlaylistSetID != "" && r.id == routePlaylist && entry("Remove from playlist", m3.IconClose).Clicked() {
+			a.removeFromPlaylist(playlistID, item)
+			close()
+		}
+		if entry("Copy", m3.IconCopy).Clicked() {
+			a.menu.copying = true
+		}
+		if item.VideoID != "" && item.VideoID == a.current.VideoID && entry("Playback details", m3.IconSettings).Clicked() {
+			a.nerd = &nerdState{open: true}
+			close()
+		}
+	})
+}
+
+func (a *app) copyMenuPage(c *ui.Context, entry func(string, *ui.SVG) ui.Element, item youtube.MusicItem, close func()) {
+	sc := m3.Of(c).Scheme
+	ui.Row(c).Height(48).Gap(4).AlignItems(ui.Center).Children(func() {
+		if m3.IconButton(c, m3.IconButtonSpec{
+			Icon: m3.IconChevronLeft, Label: "Back to the song menu", Size: m3.Small40, Key: "copy-back",
+		}).Clicked() {
+			a.menu.copying = false
+		}
+		m3.EmphasizedText(c, m3.LabelLarge, "Copy").TextColor(sc.OnSurface)
+	})
+	if title := item.Title; title != "" && entry("Copy title", m3.IconMusicNote).Clicked() {
+		c.WriteClipboard(title)
+		c.Toast("Title copied")
+		close()
+	}
+	artist := item.Artists
+	if artist == "" {
+		artist = item.Artist
+	}
+	if artist != "" && entry("Copy artist", m3.IconPerson).Clicked() {
+		c.WriteClipboard(artist)
+		c.Toast("Artist copied")
+		close()
+	}
+	if entry("Copy link", m3.IconCopy).Clicked() {
+		c.WriteClipboard(youtube.WatchURL(item.VideoID))
+		c.Toast("Link copied")
+		close()
+	}
+}
+
+func (a *app) queueMenuItems(index int, entry func(string, *ui.SVG) ui.Element, close func()) {
+	q := &a.queue
+	if selected := a.selectedQueueIndices(); len(selected) > 1 {
+		label := "Remove " + strconv.Itoa(len(selected)) + " tracks"
+		entry(label, m3.IconClose).OnClick(func() {
+			a.removeSelectedFromQueue()
+			close()
+		})
+		return
+	}
+	if index == q.index || index >= q.len() {
+		return
+	}
+	entry("Play next", m3.IconNext).OnClick(func() {
+		a.playNextInQueue(index)
+		close()
+	})
+	if index > 0 {
+		entry("Move up", m3.IconExpandLess).OnClick(func() {
+			a.shiftInQueue(index, -1)
+			close()
+		})
+	}
+	if index < q.len()-1 {
+		entry("Move down", m3.IconExpandMore).OnClick(func() {
+			a.shiftInQueue(index, 1)
+			close()
+		})
+	}
+	entry("Remove from queue", m3.IconClose).OnClick(func() {
+		a.removeFromQueue(index)
+		close()
+	})
+}
+
+func (a *app) heroMenu(c *ui.Context, anchor ui.Element) {
+	if !a.menu.owns("hero") {
+		return
+	}
+	r, id := a.route()
+	m3.Menu(c, anchor, &a.menu.open, 232, func() {
+		close := func() { a.menu.close() }
+		if r.target != youtube.TargetPodcast {
+			if m3.MenuItem(c, "Start radio", m3.IconShuffle).Clicked() {
+				a.startRadioPage()
+				close()
+			}
+			if m3.MenuItem(c, "Shuffle play", m3.IconShuffle).Clicked() {
+				a.shufflePage()
+				close()
+			}
+		}
+		if id != "" && m3.MenuItem(c, "Copy link", m3.IconCopy).Clicked() {
+			c.WriteClipboard(youtube.BrowseURL(id))
+			c.Toast("Link copied")
+			close()
+		}
+		if r.id == routePlaylist && m3.MenuItem(c, "Delete playlist", m3.IconDelete).Clicked() {
+			a.askDeletePlaylist(id, a.page.detail.title)
+			close()
+		}
+	})
+}

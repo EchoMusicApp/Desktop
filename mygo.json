@@ -1,0 +1,25 @@
+{
+  "name": "Echo Music",
+  "identifier": "echo.music.iad1tya",
+  "version": "1.0.0",
+  "versionCode": 100,
+  "out": "build",
+  "urlSchemes": ["echomusic", "echo"],
+  "macos": {
+    "infoPlist": {
+      "CFBundleVersion": "100",
+      "CFBundleShortVersionString": "1.0.0"
+    }
+  },
+  "updates": {
+    "publicKey": "xy40IQP3+pljEgT04LtgWrODXzgox9mf+EmMFyMBgLk=",
+    "github": "EchoMusicApp/Desktop",
+    "tagPrefix": "v"
+  },
+  "linux": {
+    "maintainer": "iad1tya <hello@echomusic.fun>",
+    "comment": "A lightweight desktop music player for YouTube Music",
+    "depends": ["libayatana-appindicator3-1"],
+    "command": ["echomusic"]
+  }
+}

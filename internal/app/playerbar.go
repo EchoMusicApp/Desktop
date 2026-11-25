@@ -1,0 +1,445 @@
+package app
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/EchoMusicApp/Echo-Music/internal/keymap"
+	"github.com/EchoMusicApp/Echo-Music/internal/m3"
+	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+)
+
+func (a *app) transport(c *ui.Context, size float32, gap float32) {
+	small := m3.IconButtonSpec{Size: m3.Small40}
+	if size <= 40 {
+		small = m3.IconButtonSpec{Size: m3.ExtraSmall32}
+	}
+	ui.Row(c).Gap(gap).AlignItems(ui.Center).Justify(ui.Center).Shrink(0).Children(func() {
+		spec := small
+		spec.Icon, spec.Label, spec.Toggle, spec.Selected, spec.Key = m3.IconShuffle, "Shuffle", true, a.shuffle, "shuffle"
+		a.hinted(c, func() {
+			if m3.IconButton(c, spec).Clicked() {
+				a.setShuffle(!a.shuffle)
+			}
+		}, keymap.Shuffle)
+		spec = small
+		spec.Icon, spec.Label, spec.Key = m3.IconPrevious, "Previous", "previous"
+		a.hinted(c, func() {
+			if m3.IconButton(c, spec).Clicked() {
+				a.previous()
+			}
+		}, keymap.Previous)
+		loading := a.loading()
+		playing := a.player.Playing() && !loading
+		icon, label := m3.IconPlay, "Play"
+		switch {
+		case loading:
+			label = "Loading"
+		case playing:
+			icon, label = m3.IconPause, "Pause"
+		}
+		a.hinted(c, func() {
+			if m3.IconButton(c, m3.IconButtonSpec{
+				Icon: icon, Label: label, Kind: m3.FilledIcon, Dimension: size, Selected: playing, Loading: loading, Key: "play-pause",
+			}).Clicked() {
+				a.togglePlay()
+			}
+		}, keymap.PlayPause)
+		spec = small
+		spec.Icon, spec.Label, spec.Key = m3.IconNext, "Next", "next"
+		a.hinted(c, func() {
+			if m3.IconButton(c, spec).Clicked() {
+				a.advance()
+			}
+		}, keymap.Next)
+		spec = small
+		repeatIcon := m3.IconRepeat
+		if a.repeat == repeatTrack {
+			repeatIcon = m3.IconRepeatOne
+		}
+		spec.Icon, spec.Label, spec.Toggle, spec.Selected, spec.Key = repeatIcon, "Repeat", true, a.repeat != repeatOff, "repeat"
+		a.hinted(c, func() {
+			if m3.IconButton(c, spec).Clicked() {
+				a.cycleRepeat()
+			}
+		}, keymap.Repeat)
+	})
+}
+
+func (a *app) barScrubber(c *ui.Context) {
+	sc := m3.Of(c).Scheme
+	known := a.total > 0
+	total := a.total.Seconds()
+	position := &a.scrub
+	if known {
+		a.scrub = min(a.scrub, total)
+	} else {
+		var disabledPosition float64
+		total, position = 1, &disabledPosition
+	}
+	ui.Row(c).Gap(6).AlignItems(ui.Center).FillWidth().Children(func() {
+		m3.Text(c, m3.LabelSmall, clock(time.Duration(*position*float64(time.Second)))).
+			MinWidth(34).NoWrap().TextAlign(ui.End).Shrink(0).TextColor(sc.OnSurfaceVariant).FontFeatures("tnum")
+		slider := m3.Slider(c, position, 0, total, m3.SliderSpec{
+			Label: "Position", Key: "scrubber", Thickness: 3, Wavy: a.settings.WavyProgress, Waving: a.player.Playing(), Disabled: !known,
+		})
+		if slider.Pressed() {
+			a.scrubbing = true
+		}
+		if a.scrubbing && !slider.Pressed() {
+			a.scrubbing = false
+			a.seek(time.Duration(a.scrub * float64(time.Second)))
+		} else if slider.Changed() && !slider.Pressed() {
+			a.seek(time.Duration(a.scrub * float64(time.Second)))
+		}
+		m3.Text(c, m3.LabelSmall, clock(a.total)).MinWidth(34).NoWrap().Shrink(0).TextColor(sc.OnSurfaceVariant).FontFeatures("tnum")
+	})
+}
+
+func (a *app) scrubber(c *ui.Context) {
+	sc := m3.Of(c).Scheme
+	known := a.total > 0
+	total := a.total.Seconds()
+	position := &a.scrub
+	if known {
+		a.scrub = min(a.scrub, total)
+	} else {
+		var disabledPosition float64
+		total, position = 1, &disabledPosition
+	}
+	ui.Row(c).Gap(10).AlignItems(ui.Center).FillWidth().Children(func() {
+		m3.Text(c, m3.LabelMedium, clock(time.Duration(*position*float64(time.Second)))).
+			MinWidth(40).NoWrap().TextAlign(ui.End).Shrink(0).TextColor(sc.OnSurfaceVariant).FontFeatures("tnum")
+		slider := m3.Slider(c, position, 0, total, m3.SliderSpec{
+			Label: "Position", Key: "scrubber", Wavy: a.settings.WavyProgress, Waving: a.player.Playing(), Disabled: !known,
+		})
+		if slider.Pressed() {
+			a.scrubbing = true
+		}
+		if a.scrubbing && !slider.Pressed() {
+			a.scrubbing = false
+			a.seek(time.Duration(a.scrub * float64(time.Second)))
+		} else if slider.Changed() && !slider.Pressed() {
+			a.seek(time.Duration(a.scrub * float64(time.Second)))
+		}
+		m3.Text(c, m3.LabelMedium, clock(a.total)).MinWidth(40).NoWrap().Shrink(0).TextColor(sc.OnSurfaceVariant).FontFeatures("tnum")
+	})
+}
+
+func (a *app) volumeIcon() *ui.SVG {
+	icon := m3.IconVolumeUp
+	switch {
+	case a.volume == 0:
+		icon = m3.IconVolumeOff
+	case a.volume < 45:
+		icon = m3.IconVolumeDown
+	}
+	return icon
+}
+
+func (a *app) muteButton(c *ui.Context) ui.Element {
+	button := m3.IconButton(c, m3.IconButtonSpec{Icon: a.volumeIcon(), Label: "Mute", Key: "mute", Size: m3.ExtraSmall32})
+	if button.Clicked() {
+		a.toggleMute()
+	}
+	return button
+}
+
+func (a *app) volumeSlider(c *ui.Context, vertical bool) ui.Element {
+	a.nowPlaying.volumeDraft = a.volume
+	slider := m3.Slider(c, &a.nowPlaying.volumeDraft, 0, 100, m3.SliderSpec{Label: "Volume", Key: "volume", Vertical: vertical})
+	if slider.Changed() {
+		a.setVolume(a.nowPlaying.volumeDraft)
+	}
+	switch {
+	case slider.Pressed():
+		a.nowPlaying.volumeHeld = true
+	case a.nowPlaying.volumeHeld:
+		a.nowPlaying.volumeHeld = false
+		a.saveSettings()
+	case slider.Changed():
+		a.saveSettings()
+	}
+	return slider
+}
+
+func (a *app) volumeControl(c *ui.Context, sliderWidth float32) {
+	a.nowPlaying.volumePopup = false
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
+		a.hinted(c, func() {
+			a.muteButton(c)
+		}, keymap.Mute)
+		if sliderWidth <= 0 {
+			return
+		}
+		a.hinted(c, func() {
+			ui.Row(c).Width(sliderWidth).Children(func() {
+				a.volumeSlider(c, false)
+			})
+		}, keymap.VolumeUp, keymap.VolumeDown)
+	})
+}
+
+func (a *app) compactVolumeControl(c *ui.Context) {
+	sc := m3.Of(c).Scheme
+	ui.Row(c).Shrink(0).Children(func() {
+		var anchor ui.Element
+		a.hinted(c, func() { anchor = a.muteButton(c) }, keymap.Mute)
+
+		open := anchor.Hovered() || anchor.FocusVisible() || a.nowPlaying.volumePopup
+		var slider ui.Element
+		panel := ui.PopoverBase(c, anchor, &open, func(panel ui.Element) {
+			panel.Key("volume-popup").Width(64).Padding(8).Radius(m3.Large).Margin(0).Background(sc.SurfaceContainerHigh)
+			m3.Elevation(c, panel, 3)
+			a.hinted(c, func() {
+				ui.Column(c).Width(48).Height(128).Center().Children(func() {
+					slider = a.volumeSlider(c, true)
+				})
+			}, keymap.VolumeUp, keymap.VolumeDown)
+		})
+		keepOpen := anchor.Hovered() || anchor.FocusVisible() || panel.Hovered() || slider.FocusVisible()
+		if next := open && keepOpen; next != a.nowPlaying.volumePopup {
+			a.nowPlaying.volumePopup = next
+			c.Invalidate()
+		}
+	})
+}
+
+func speedLabel(speed float64) string {
+	return strconv.FormatFloat(speed, 'f', -1, 64) + "×"
+}
+
+func (a *app) speedButton(c *ui.Context, key string) {
+	speed := a.speedFor(a.current)
+	anchor := m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconMore, Label: "Playback speed: " + speedLabel(speed), Key: key, Size: m3.ExtraSmall32})
+	if anchor.Clicked() {
+		if a.nowPlaying.speedMenu == key {
+			a.nowPlaying.speedMenu = ""
+		} else {
+			a.nowPlaying.speedMenu = key
+		}
+		a.nowPlaying.speedChoices = false
+	}
+	open := a.nowPlaying.speedMenu == key
+	if !open {
+		return
+	}
+	m3.Menu(c, anchor, &open, 232, func() {
+		if a.nowPlaying.speedChoices {
+			a.speedChoices(c, key, speed, &open)
+			return
+		}
+		a.speedMenuRow(c, key, speed)
+	})
+	if !open {
+		a.nowPlaying.speedMenu, a.nowPlaying.speedChoices = "", false
+	}
+}
+
+func (a *app) speedMenuRow(c *ui.Context, key string, speed float64) {
+	sc := m3.Of(c).Scheme
+	row := ui.ButtonBase(c.Key(key + "-choices"))
+	row.Height(48).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(m3.Medium).Cursor(ui.CursorPointer).
+		Label("Playback speed").Role(ui.RoleMenuItem).
+		Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
+	row.Children(func() {
+		m3.LabelLarge.Style(ui.Text(c, "Playback speed"), false).Grow(1).SingleLine().TextColor(sc.OnSurface)
+		m3.Text(c, m3.LabelMedium, speedLabel(speed)).TextColor(sc.OnSurfaceVariant)
+		ui.Icon(c, m3.IconChevronRight).FontSize(20).TextColor(sc.OnSurfaceVariant)
+	})
+	if row.Clicked() {
+		a.nowPlaying.speedChoices = true
+	}
+	details := ui.ButtonBase(c.Key(key + "-details"))
+	details.Height(48).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(m3.Medium).Cursor(ui.CursorPointer).
+		Label("Playback details").Role(ui.RoleMenuItem).
+		Background(m3.StateFill(ui.Transparent, sc.OnSurface, details.Hovered(), details.Pressed(), details.FocusVisible()))
+	details.Children(func() {
+		m3.LabelLarge.Style(ui.Text(c, "Playback details"), false).Grow(1).SingleLine().TextColor(sc.OnSurface)
+	})
+	if details.Clicked() {
+		a.nerd = &nerdState{open: true}
+		a.nowPlaying.speedMenu = ""
+	}
+}
+
+func (a *app) speedChoices(c *ui.Context, key string, speed float64, open *bool) {
+	sc := m3.Of(c).Scheme
+	ui.Row(c).Height(48).Gap(4).AlignItems(ui.Center).Children(func() {
+		if m3.IconButton(c, m3.IconButtonSpec{
+			Icon: m3.IconChevronLeft, Label: "Back to the player menu", Size: m3.Small40, Key: key + "-back",
+		}).Clicked() {
+			a.nowPlaying.speedChoices = false
+		}
+		m3.EmphasizedText(c, m3.LabelLarge, "Playback speed").TextColor(sc.OnSurface)
+	})
+	for _, choice := range playbackSpeeds {
+		label := speedLabel(choice)
+		if choice == 1 {
+			label = "Normal"
+		}
+		row := ui.ButtonBase(c.Key("speed-" + label))
+		row.Height(36).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(m3.Medium).Cursor(ui.CursorPointer).Label(label).
+			Role(ui.RoleMenuItemRadio).Checked(choice == speed).
+			Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
+		row.Children(func() {
+			if choice == speed {
+				ui.Icon(c, m3.IconCheck).FontSize(22).TextColor(sc.Primary)
+			} else {
+				ui.Box(c).Size(22, 22)
+			}
+			m3.Text(c, m3.BodyLarge, label).Grow(1).SingleLine().TextColor(sc.OnSurface)
+		})
+		if row.Clicked() {
+			*open = false
+			a.setSpeed(choice)
+		}
+	}
+}
+
+type bylineKey struct {
+	videoID, artist, subtitle string
+	byline                    *youtube.TrackByline
+}
+
+func (a *app) playerByline() []youtube.BylinePart {
+	key := bylineKey{a.current.VideoID, a.current.Artist, a.current.Subtitle, a.current.Byline}
+	if key != a.bylineFor || a.bylineParts == nil {
+		a.bylineFor, a.bylineParts = key, a.current.PlayerByline()
+	}
+	return a.bylineParts
+}
+
+func (a *app) trackLine(c *ui.Context, title, subtitle m3.Role, links bool) ui.Element {
+	sc := m3.Of(c).Scheme
+	return ui.Column(c).Gap(1).MinWidth(0).Children(func() {
+		m3.EmphasizedText(c, title, a.current.Title).SingleLine().TextColor(sc.OnSurface).ContentTransition(ui.ContentTransition{})
+		line, colour := a.current.Subtitle, sc.OnSurfaceVariant
+		if a.playErr != "" {
+			line, colour = firstLine(a.playErr), sc.Error
+		}
+		if links && a.playErr == "" {
+			parts := a.playerByline()
+			subtitle.Style(ui.RichText(c.Key(a.current.VideoID)), false).MaxLines(2).TextColor(colour).Children(func() {
+				for i, part := range parts {
+					if !part.Target().Opens() {
+						ui.Text(c.Key(i), part.Text)
+						continue
+					}
+					link := ui.Link(c.Key(i), part.Text, "").TextColor(colour).Disabled(a.nowPlaying.closing)
+					label := "Go to artist: "
+					if part.Target().Kind == youtube.TargetAlbum {
+						label = "Go to album: "
+					}
+					link.Label(label + part.Text).Tooltip(label + part.Text)
+					if link.Clicked() {
+						a.openPlayerLink(part)
+					}
+				}
+			})
+			return
+		}
+		m3.Text(c, subtitle, line).SingleLine().TextColor(colour).ContentTransition(ui.ContentTransition{})
+	})
+}
+
+func (a *app) openPlayerLink(part youtube.BylinePart) {
+	if a.nowPlaying.open {
+		a.nowPlaying.navigateTo = part
+		a.nowPlaying.navigateToSet = true
+		a.nowPlaying.closing = true
+		return
+	}
+	a.openTarget(part.Target(), detail{title: part.Text})
+}
+
+func (a *app) playerBar(c *ui.Context) {
+	sc := m3.Of(c).Scheme
+	w, _ := c.Size()
+	wide := w > 1180
+	roomy := w > 820
+	compact := w < 720
+	bar := ui.Row(c.Key("player")).Absolute().Left(0).Right(0).Bottom(0).
+		Height(playerHeight).Padding(12, 20, 8, 20).Gap(14).AlignItems(ui.Center).
+		Radius(0, 0, m3.ExtraLarge, m3.ExtraLarge).Background(sc.SurfaceContainerHighest).
+		BorderWidth(1, 0, 0, 0).BorderColor(sc.OutlineVariant.Alpha(0.25))
+	slide := m3.SpatialDefault.Motion()
+	slide.Enter = &ui.Motion{Y: 48}
+	slide.Position = true
+	bar.Transition(slide)
+	bar.Children(func() {
+		info := ui.ButtonBase(c.Key("player-info"))
+		info.Grow(1).Basis(0).MinWidth(0).Gap(12).AlignItems(ui.Center).Radius(m3.Medium).Padding(4, 8, 4, 4).
+			Cursor(ui.CursorPointer).Label("Open the player").
+			Background(m3.StateFill(ui.Transparent, sc.OnSurface, info.Hovered(), info.Pressed(), info.FocusVisible()))
+		info.Children(func() {
+			artSize := float32(44)
+			a.playerArtwork(&a.playerCover, c, a.current.Thumbnail, playerArt, artSize, 8, func() {
+				if a.current.IsVideo() {
+					m3.VideoBadge(c, artSize)
+				}
+			})
+			a.trackLine(c, m3.TitleSmall, m3.BodySmall, true).Grow(1)
+		})
+		if info.Clicked() {
+			if a.nowPlaying.open {
+				a.nowPlaying.closing = true
+			} else {
+				a.nowPlaying.open, a.nowPlaying.closing = true, false
+				a.loadPanel()
+			}
+		}
+
+		mid := ui.Column(c.Key("bar-mid")).AlignItems(ui.Center).Justify(ui.Center).Gap(2)
+		if compact {
+			mid.Grow(1.2).Basis(0).MinWidth(180)
+		} else {
+			midGrow := float32(2)
+			if !roomy {
+				midGrow = 1.4
+			}
+			mid.Grow(midGrow).Basis(0).MinWidth(220).MaxWidth(600)
+		}
+		mid.Children(func() {
+			ui.Row(c.Key("bar-transport")).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
+				a.transport(c, 36, 4)
+			})
+			ui.Row(c.Key("bar-scrubber-row")).FillWidth().Justify(ui.Center).AlignItems(ui.Center).Children(func() {
+				a.barScrubber(c)
+			})
+		})
+
+		end := ui.Row(c.Key("bar-end")).Justify(ui.End).AlignItems(ui.Center).Gap(4)
+		if roomy {
+			end.Grow(1).Basis(0)
+		} else {
+			end.Shrink(0)
+		}
+		end.Children(func() {
+			if wide {
+				a.volumeControl(c, 92)
+			} else {
+				a.compactVolumeControl(c)
+			}
+			a.speedButton(c, "bar-speed")
+			if m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconQueue, Label: "Up next", Key: "bar-queue"}).Clicked() {
+				a.openPlayer(tabQueue, true)
+			}
+			if m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconFullscreen, Label: "Full screen", Key: "bar-fullscreen"}).Clicked() {
+				a.openFullScreen()
+			}
+			expandIcon, expandLabel := m3.IconExpandLess, "Open the player"
+			if a.nowPlaying.open {
+				expandIcon, expandLabel = m3.IconExpandMore, "Close the player"
+			}
+			if m3.IconButton(c, m3.IconButtonSpec{Icon: expandIcon, Label: expandLabel, Key: "bar-expand"}).Clicked() {
+				if a.nowPlaying.open {
+					a.nowPlaying.closing = true
+				} else {
+					a.openPlayer(a.nowPlaying.tab, false)
+				}
+			}
+		})
+	})
+}

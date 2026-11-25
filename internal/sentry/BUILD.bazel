@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "sentry",
+    srcs = ["sentry.go"],
+    importpath = "github.com/EchoMusicApp/Echo-Music/internal/sentry",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/applog",
+        "@com_github_getsentry_sentry_go//:sentry-go",
+    ],
+)
