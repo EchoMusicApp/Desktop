@@ -15,185 +15,256 @@ permissions:
   contents: write
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Fetch bundled media tools
-        run: |
-          ./scripts/fetch-tools.sh darwin-arm64
-          ./scripts/fetch-tools.sh darwin-amd64
-
-      - name: Run tests
-        run: go test ./...
-
-      - name: Build macOS (arm64 & amd64)
-        run: go tool mygo build -platform darwin/arm64,darwin/amd64
-
-      - name: Collect macOS artifacts
-        run: |
-          mkdir -p artifacts
-          cp build/darwin-arm64/*.dmg artifacts/
-          cp build/darwin-amd64/*.dmg artifacts/
-          cp build/darwin-arm64/install.sh artifacts/install-macos-arm64.sh
-          cp build/darwin-amd64/install.sh artifacts/install-macos-amd64.sh
-          ls -lh artifacts/
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-artifacts
-          path: artifacts/*
-
-  build-windows-tools:
+  gate:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      ytdlp: ${{ steps.ytdlp.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install MinGW-w64 & build dependencies
+      - name: Find the latest yt-dlp release
+        id: ytdlp
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64 nasm make curl xz-utils unzip
+          version="$(gh api repos/yt-dlp/yt-dlp/releases/latest --jq .tag_name)"
+          test -n "$version" || { echo "No yt-dlp release found."; exit 1; }
+          echo "Bundling yt-dlp $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch & cross-compile Windows media tools
-        run: ./scripts/fetch-tools.sh windows-amd64
-
-      - name: Upload Windows resources
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-resources
-          path: resources/windows-amd64
-
-  build-windows:
-    needs: build-windows-tools
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Download Windows resources
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-resources
-          path: resources/windows-amd64
-
-      - name: Build Windows (amd64)
-        run: go tool mygo build -platform windows/amd64
-
-      - name: Collect Windows artifacts
-        shell: pwsh
+      - name: Resolve the tag and commit
+        id: resolve
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          $ver = (Get-Content mygo.json | ConvertFrom-Json).version
-          Get-ChildItem build/windows-amd64/*-setup-*.exe | Copy-Item -Destination artifacts/
-          New-Item -ItemType Directory -Force -Path portable | Out-Null
-          Get-ChildItem build/windows-amd64 -Exclude "*-setup-*.exe" | Copy-Item -Destination portable/ -Recurse
-          Compress-Archive -Path portable/* -DestinationPath "artifacts/echo-music-$ver-windows-amd64-portable.zip"
-          Get-ChildItem artifacts/
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.ref_name }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag"
 
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-artifacts
-          path: artifacts/*
-
-  build-linux:
+  ffmpeg:
+    needs: gate
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: linux-amd64
-            arch: amd64
-            mygo_platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux-arm64
-            arch: arm64
-            mygo_platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+          - { platform: darwin-arm64, os: macos-latest }
+          - { platform: darwin-amd64, os: macos-latest }
+          - { platform: linux-amd64, os: ubuntu-latest }
+          - { platform: linux-arm64, os: ubuntu-24.04-arm }
+          - { platform: windows-amd64, os: ubuntu-latest }
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: resources/${{ matrix.platform }}
+          key: ffmpeg-${{ matrix.platform }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+      - name: Build ffmpeg in Alpine
+        if: startsWith(matrix.platform, 'linux-') && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src alpine:3.22 sh -euc '
+            apk add --no-cache bash build-base curl nasm openssl-dev openssl-libs-static pkgconf tar xz
+            scripts/build-ffmpeg.sh "${{ matrix.platform }}"
+            chown -R '"$(id -u):$(id -g)"' resources'
+
+      - name: Build ffmpeg with MinGW-w64
+        if: startsWith(matrix.platform, 'windows-') && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 nasm xz-utils
+          scripts/build-ffmpeg.sh "${{ matrix.platform }}"
+
+      - name: Build ffmpeg
+        if: startsWith(matrix.platform, 'darwin-') && steps.cache.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh "${{ matrix.platform }}"
+
+      - name: Check the build
+        run: |
+          ffmpeg="resources/${{ matrix.platform }}/bin/ffmpeg"
+          if [ "${{ matrix.platform }}" = windows-amd64 ]; then ffmpeg="$ffmpeg.exe"; fi
+          ls -la "$ffmpeg"
+          if [ "${{ matrix.platform }}" != darwin-amd64 ] && [ "${{ matrix.platform }}" != windows-amd64 ]; then
+            "$ffmpeg" -hide_banner -protocols | grep -x '  https'
+            "$ffmpeg" -hide_banner -decoders | grep -E ' (opus|aac) '
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.platform }}
+          path: resources/${{ matrix.platform }}
+          include-hidden-files: true
+          if-no-files-found: error
+
+  build:
+    needs: [gate, ffmpeg]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: darwin-universal, os: macos-latest }
+          - { platform: linux-amd64, os: ubuntu-latest }
+          - { platform: linux-arm64, os: ubuntu-latest }
+          - { platform: windows-amd64, os: ubuntu-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Build static ffmpeg in Alpine container
+      - name: Set the version
         run: |
-          docker run --rm -v "$PWD:/work" -w /work alpine:latest sh -c "
-            apk add --no-cache bash curl xz tar make gcc musl-dev nasm openssl-dev openssl-libs-static pkgconf &&
-            ./scripts/build-ffmpeg.sh ${{ matrix.platform }}
-          "
+          version="${{ needs.gate.outputs.version }}"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          jq --arg v "$version" '.version = $v' mygo.json > mygo.json.new
+          mv mygo.json.new mygo.json
 
-      - name: Fetch remaining media tools (yt-dlp, QuickJS)
-        run: ./scripts/fetch-tools.sh ${{ matrix.platform }}
+      - uses: actions/download-artifact@v4
+        if: matrix.platform == 'darwin-universal'
+        with:
+          name: ffmpeg-darwin-arm64
+          path: resources/darwin-arm64
 
-      - name: Run tests
-        run: go test ./...
+      - uses: actions/download-artifact@v4
+        if: matrix.platform == 'darwin-universal'
+        with:
+          name: ffmpeg-darwin-amd64
+          path: resources/darwin-amd64
 
-      - name: Build Linux (${{ matrix.arch }})
-        run: go tool mygo build -platform ${{ matrix.mygo_platform }}
+      - uses: actions/download-artifact@v4
+        if: matrix.platform != 'darwin-universal'
+        with:
+          name: ffmpeg-${{ matrix.platform }}
+          path: resources/${{ matrix.platform }}
 
-      - name: Collect Linux artifacts
+      - name: Set up the Windows installer tool
+        if: startsWith(matrix.platform, 'windows-')
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nsis
+
+      - name: Fetch media tools and build
+        env:
+          YT_DLP_VERSION: ${{ needs.gate.outputs.ytdlp }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p artifacts
-          dir="build/${{ matrix.platform }}"
-          ls -la "$dir"
-          find "$dir" -maxdepth 1 -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.AppImage" -o -name "*.flatpak" \) -exec cp {} artifacts/ \;
-          if [ -f "$dir/install.sh" ]; then
-            cp "$dir/install.sh" "artifacts/install-linux-${{ matrix.arch }}.sh"
+          platform="${{ matrix.platform }}"
+          if [ "$platform" = "darwin-universal" ]; then
+            fetch_platforms=(darwin-arm64 darwin-amd64)
+          else
+            fetch_platforms=("$platform")
           fi
-          if [ -f "$dir/PKGBUILD" ]; then
-            cp "$dir/PKGBUILD" "artifacts/PKGBUILD-linux-${{ matrix.arch }}"
+          for fp in "${fetch_platforms[@]}"; do
+            for ff in "resources/$fp/bin/ffmpeg" "resources/$fp/bin/ffmpeg.exe"; do
+              if [ -f "$ff" ]; then chmod +x "$ff"; fi
+            done
+            ./scripts/fetch-tools.sh "$fp"
+          done
+          if [[ "$platform" == windows-* ]]; then
+            export GOFLAGS="${GOFLAGS:+$GOFLAGS }-modfile=$(./scripts/dux-go-modfile.sh)"
           fi
+          go tool mygo build -o dist -platform "${platform/-//}"
+
+      - name: Set up Linux package tools
+        if: startsWith(matrix.platform, 'linux-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak imagemagick
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          for arch in x86_64 aarch64; do
+            sudo flatpak install --noninteractive --arch="$arch" flathub org.gnome.Platform//48 org.gnome.Sdk//48
+          done
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          curl --fail --location --silent --show-error \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+            --output "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+
+      - name: Collect the downloads
+        run: |
+          mkdir artifacts
+          arch="${{ matrix.platform }}"; arch="${arch#*-}"
+          case "${{ matrix.platform }}" in
+            darwin-*)
+              dmg="$(find "dist/${{ matrix.platform }}" -maxdepth 1 -name '*.dmg')"
+              cp "$dmg" "artifacts/Echo-Music-${VERSION}-macos-${arch}.dmg"
+              ;;
+            windows-*)
+              installer="$(find "dist/${{ matrix.platform }}" -maxdepth 1 -name '*-setup-*.exe')"
+              cp "$installer" "artifacts/Echo-Music-${VERSION}-windows-${arch}-setup.exe"
+              python3 - "dist/${{ matrix.platform }}" "artifacts/Echo-Music-${VERSION}-windows-${arch}-portable.zip" <<'PY'
+          from pathlib import Path
+          import sys
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          source = Path(sys.argv[1])
+          output = Path(sys.argv[2])
+          with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+              for path in sorted(source.rglob("*")):
+                  if path.is_dir():
+                      continue
+                  relative = path.relative_to(source)
+                  if relative.parent == Path(".") and (
+                      (relative.name.startswith("update-") and path.suffix == ".json")
+                      or path.suffix == ".delta"
+                      or path.name.endswith(".tar.gz")
+                      or ("-setup-" in relative.name and path.suffix == ".exe")
+                  ):
+                      continue
+                  archive.write(path, Path("Echo Music") / relative)
+          PY
+              ;;
+            linux-*)
+              scripts/package-linux.sh "${{ matrix.platform }}" "$VERSION" artifacts full
+              ;;
+          esac
           ls -lh artifacts/
 
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: linux-artifacts-${{ matrix.arch }}
+          name: echomusic-${{ matrix.platform }}
           path: artifacts/*
+          if-no-files-found: error
 
   release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [gate, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          path: all-artifacts
+          ref: ${{ needs.gate.outputs.sha }}
 
-      - name: Prepare release assets & checksums
-        run: |
-          mkdir -p release-assets
-          find all-artifacts -type f -exec mv {} release-assets/ \;
-          (cd release-assets && sha256sum * > SHA256SUMS)
-          ls -lh release-assets/
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: echomusic-*
+          path: artifacts
+          merge-multiple: true
 
-      - name: Publish GitHub Release
+      - name: Checksums
+        run: cd artifacts && sha256sum ./* > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          VERSION: ${{ needs.gate.outputs.version }}
         run: |
-          NOTES=$(cat <<'EOF'
+          cat > release-notes.md <<'EOF'
           ## Echo Music Desktop
 
           Official native desktop client for **Echo Music**, built in Go with hardware-accelerated rendering and zero Electron overhead.
@@ -207,23 +278,19 @@ jobs:
           - **Material You & Dynamic Themes**: Monochrome, Tonal Spot, Vibrant, Expressive, and Gradient Aurora palettes with album artwork color extraction.
           - **Offline Cache, Downloads & Extras**: Automatic song caching, offline downloads, on-device listening history & stats, Discord Rich Presence, and local MCP server.
 
-          ### Downloads by Platform
-          | Platform | Architecture | Packages |
-          | --- | --- | --- |
-          | **macOS** | Apple Silicon (`arm64`) / Intel (`amd64`) | `.dmg`, `install-macos-*.sh` |
-          | **Windows** | `x64` (`amd64`) | `-setup-*.exe` (NSIS Installer), `-portable.zip` |
-          | **Linux** | `x86_64` (`amd64`) / `arm64` | `.deb`, `.rpm`, `.tar.gz`, `PKGBUILD`, `install-linux-*.sh` |
-
-          > Verify integrity with `SHA256SUMS`.
+          ### Downloads
+          - **macOS** (`universal` — Apple Silicon & Intel): `.dmg`
+          - **Windows** (`amd64`): `-setup.exe` (NSIS installer) and `-portable.zip` (extract and run `Echo Music.exe`)
+          - **Linux** (`amd64`, `arm64`): `.deb`, `.rpm`, `.flatpak`, `.AppImage`, and `.tar.gz`
+          - All builds bundle `ffmpeg`, `yt-dlp`, and `QuickJS`. Verify downloads with `SHA256SUMS.txt`.
           EOF
-          )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "Echo Music Desktop $TAG" --notes "$NOTES"
-            gh release upload "$TAG" release-assets/* --clobber
+            gh release edit "$TAG" --title "Echo Music Desktop $VERSION" --notes-file release-notes.md
+            gh release upload "$TAG" artifacts/* --clobber
           else
-            gh release create "$TAG" release-assets/* \
-              --target "${{ github.sha }}" \
-              --title "Echo Music Desktop $TAG" \
-              --notes "$NOTES"
+            gh release create "$TAG" artifacts/* \
+              --target "${{ needs.gate.outputs.sha }}" \
+              --title "Echo Music Desktop $VERSION" \
+              --notes-file release-notes.md
           fi
