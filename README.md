@@ -23,9 +23,7 @@
 
 | Full-Screen 3D Album Art | Full-Screen Synced Lyrics |
 | :---: | :---: |
-| ![Full-Screen Music Art](./website/assets/full%20screen%20art.png) | ![Full-Screen Synced Lyrics](./website/assets/full%20screen%20lyrics.png) |
-
-![Podcasts and Library Workspace](./website/assets/podcast.png)
+| ![Full-Screen 3D Album Art](./assets/full%20screen%20art.png) | ![Full-Screen Synced Lyrics](./assets/full%20screen%20lyrics.png) |
 
 ---
 
