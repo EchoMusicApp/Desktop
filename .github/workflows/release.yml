@@ -1,0 +1,191 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish (e.g. v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Fetch bundled media tools
+        run: |
+          ./scripts/fetch-tools.sh darwin-arm64
+          ./scripts/fetch-tools.sh darwin-amd64
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build macOS (arm64 & amd64)
+        run: go tool mygo build -platform darwin/arm64,darwin/amd64
+
+      - name: Collect macOS artifacts
+        run: |
+          mkdir -p artifacts
+          cp build/darwin-arm64/*.dmg artifacts/
+          cp build/darwin-amd64/*.dmg artifacts/
+          cp build/darwin-arm64/install.sh artifacts/install-macos-arm64.sh
+          cp build/darwin-amd64/install.sh artifacts/install-macos-amd64.sh
+          ls -lh artifacts/
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: artifacts/*
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Fetch bundled media tools
+        shell: bash
+        run: ./scripts/fetch-tools.sh windows-amd64
+
+      - name: Build Windows (amd64)
+        run: go tool mygo build -platform windows/amd64
+
+      - name: Collect Windows artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $ver = (Get-Content mygo.json | ConvertFrom-Json).version
+          Get-ChildItem build/windows-amd64/*-setup-*.exe | Copy-Item -Destination artifacts/
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Get-ChildItem build/windows-amd64 -Exclude "*-setup-*.exe" | Copy-Item -Destination portable/ -Recurse
+          Compress-Archive -Path portable/* -DestinationPath "artifacts/echo-music-$ver-windows-amd64-portable.zip"
+          Get-ChildItem artifacts/
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: artifacts/*
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Fetch bundled media tools
+        run: |
+          ./scripts/fetch-tools.sh linux-amd64
+          ./scripts/fetch-tools.sh linux-arm64
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build Linux (amd64 & arm64)
+        run: go tool mygo build -platform linux/amd64,linux/arm64
+
+      - name: Collect Linux artifacts
+        run: |
+          mkdir -p artifacts
+          for arch in amd64 arm64; do
+            dir="build/linux-$arch"
+            ls -la "$dir"
+            find "$dir" -maxdepth 1 -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.AppImage" -o -name "*.flatpak" \) -exec cp {} artifacts/ \;
+            if [ -f "$dir/install.sh" ]; then
+              cp "$dir/install.sh" "artifacts/install-linux-$arch.sh"
+            fi
+            if [ -f "$dir/PKGBUILD" ]; then
+              cp "$dir/PKGBUILD" "artifacts/PKGBUILD-linux-$arch"
+            fi
+          done
+          ls -lh artifacts/
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: artifacts/*
+
+  release:
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Prepare release assets & checksums
+        run: |
+          mkdir -p release-assets
+          find all-artifacts -type f -exec mv {} release-assets/ \;
+          (cd release-assets && sha256sum * > SHA256SUMS)
+          ls -lh release-assets/
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          NOTES=$(cat <<'EOF'
+          ## Echo Music Desktop
+
+          Official native desktop client for **Echo Music**, built in Go with hardware-accelerated rendering and zero Electron overhead.
+
+          ### Highlights
+          - **Native Go + Hardware UI**: Compiled native binary with GPU-accelerated rendering and fast cold starts across macOS, Windows, and Linux.
+          - **MacBook Notch & Menu Bar Players**: Compact dynamic notch island with a wavy progress scrubber and live lyric line, plus a menu bar / tray mini player with Up Next queue controls.
+          - **Full-Screen 3D Art & Synced Lyrics**: Cursor-reactive 3D tilted album art with specular highlight and big left-aligned synced lyrics with click-to-seek navigation.
+          - **Podcasts & Library Workspace**: Browse podcast shows, episodes, Explore, Home, Library, and Downloads from a unified left navigation rail and `⌘K` search bar.
+          - **10-Band Equalizer & Audio Controls**: Real-time 10-band EQ (`31 Hz – 16 kHz`) with presets, loudness normalization, configurable track crossfade, playback speed, and audio output switching.
+          - **Material You & Dynamic Themes**: Monochrome, Tonal Spot, Vibrant, Expressive, and Gradient Aurora palettes with album artwork color extraction.
+          - **Offline Cache, Downloads & Extras**: Automatic song caching, offline downloads, on-device listening history & stats, Discord Rich Presence, and local MCP server.
+
+          ### Downloads by Platform
+          | Platform | Architecture | Packages |
+          | --- | --- | --- |
+          | **macOS** | Apple Silicon (`arm64`) / Intel (`amd64`) | `.dmg`, `install-macos-*.sh` |
+          | **Windows** | `x64` (`amd64`) | `-setup-*.exe` (NSIS Installer), `-portable.zip` |
+          | **Linux** | `x86_64` (`amd64`) / `arm64` | `.deb`, `.rpm`, `.tar.gz`, `PKGBUILD`, `install-linux-*.sh` |
+
+          > Verify integrity with `SHA256SUMS`.
+          EOF
+          )
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Echo Music Desktop $TAG" --notes "$NOTES"
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" release-assets/* \
+              --target "${{ github.sha }}" \
+              --title "Echo Music Desktop $TAG" \
+              --notes "$NOTES"
+          fi
