@@ -36,7 +36,7 @@ fi
 mkdir -p "$artifacts"
 deb=$(find "$dist" -maxdepth 1 -type f -name '*.deb' -print -quit)
 archive=$(find "$dist" -maxdepth 1 -type f -name '*.tar.gz' -print -quit)
-if [[ -z "$deb" || -z "$archive" || ! -f "$dist/echomusic.desktop" || ! -f "$dist/echomusic.png" ]]; then
+if [[ -z "$deb" || -z "$archive" || ! -f "$dist/echo-music.desktop" || ! -f "$dist/echo-music.png" ]]; then
   echo "MyGo Linux build is missing its .deb, archive, desktop entry, or icon: $dist" >&2
   exit 1
 fi
@@ -92,17 +92,17 @@ ARCH="$arch" VERSION="$version" RPM_ROOT="$rpm_root" \
 appdir="$tmp/Echo Music.AppDir"
 mkdir -p "$appdir/usr/bin"
 tar -xzf "$archive" -C "$appdir/usr/bin"
-cp "$dist/echomusic.desktop" "$appdir/echomusic.desktop"
-cp "$dist/echomusic.png" "$appdir/echomusic.png"
-sed -i 's/^Exec=.*/Exec=AppRun/' "$appdir/echomusic.desktop"
+cp "$dist/echo-music.desktop" "$appdir/echo-music.desktop"
+cp "$dist/echo-music.png" "$appdir/echo-music.png"
+sed -i 's/^Exec=.*/Exec=AppRun/' "$appdir/echo-music.desktop"
 cat > "$appdir/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/echomusic" "$@"
+exec "$HERE/usr/bin/echo-music" "$@"
 EOF
 chmod +x "$appdir/AppRun"
 
-APPIMAGETOOL_APP_NAME=Echo Music VERSION="$version" ARCH="$appimage_arch" \
+APPIMAGETOOL_APP_NAME="Echo Music" VERSION="$version" ARCH="$appimage_arch" \
   "$APPIMAGETOOL" --appimage-extract-and-run --no-appstream \
     "$appdir" "$artifacts/Echo Music-$version-linux-$arch.AppImage"
 
@@ -125,10 +125,10 @@ if [[ "$variant" == full ]]; then
     "$build/files/share/icons/hicolor/512x512/apps"
   tar -xzf "$archive" -C "$build/files/bin"
   # Flatpak rejects an icon larger than 512x512, and the app icon is 1024x1024.
-  convert "$dist/echomusic.png" -resize 512x512 \
+  convert "$dist/echo-music.png" -resize 512x512 \
     "$build/files/share/icons/hicolor/512x512/apps/$app_id.png"
-  sed -e 's/^Exec=.*/Exec=echomusic %U/' -e "s/^Icon=.*/Icon=$app_id/" \
-    "$dist/echomusic.desktop" > "$build/files/share/applications/$app_id.desktop"
+  sed -e 's/^Exec=.*/Exec=echo-music %U/' -e "s/^Icon=.*/Icon=$app_id/" \
+    "$dist/echo-music.desktop" > "$build/files/share/applications/$app_id.desktop"
   # Import reads the user's browser profiles, and the Secret Service key that
   # encrypts a Chromium browser's cookies. The sign-in window also starts the
   # browser on the host through flatpak-spawn, which needs
@@ -148,7 +148,7 @@ if [[ "$variant" == full ]]; then
     browser_access+=("--filesystem=~/.var/app/$dir")
   done
   browser_access+=('--filesystem=~/snap/chromium' '--filesystem=~/snap/firefox')
-  flatpak build-finish "$build" --command=echomusic \
+  flatpak build-finish "$build" --command=echo-music \
     --share=network --share=ipc \
     --socket=wayland --socket=fallback-x11 --socket=pulseaudio --device=dri \
     --talk-name=org.kde.StatusNotifierWatcher \
