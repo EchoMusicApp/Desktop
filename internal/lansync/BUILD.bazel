@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "lansync",
+    srcs = [
+        "mdns.go",
+        "multicast_bsd.go",
+        "multicast_other.go",
+        "server.go",
+    ],
+    importpath = "github.com/EchoMusicApp/Echo-Music/internal/lansync",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "lansync_test",
+    srcs = ["lansync_test.go"],
+    embed = [":lansync"],
+)

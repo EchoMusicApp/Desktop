@@ -171,6 +171,10 @@ func (a *app) applyReloadedSettings(previous settings.Settings) {
 	if s.MCPControl != previous.MCPControl {
 		a.syncMCP()
 	}
+	if (s.LANSync == nil) != (previous.LANSync == nil) || (s.LANSync != nil && previous.LANSync != nil && *s.LANSync != *previous.LANSync) || s.DeviceName != previous.DeviceName {
+		a.closeLANSync()
+		a.syncLANSync()
+	}
 	if s.Volume != previous.Volume || s.LogVolume != previous.LogVolume {
 		a.volume = s.Volume
 		if a.volume > 0 {

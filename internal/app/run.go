@@ -117,6 +117,9 @@ func Run() {
 		a.every(freeOSMemoryInterval, debug.FreeOSMemory)
 		a.watchSettings()
 		a.syncMCP()
+		a.syncLANSync()
+		a.every(30*time.Second, a.syncEpisodesWithPeers)
+		a.every(1*time.Second, a.refreshLANRemoteStates)
 		a.watchSession()
 		a.every(flushInterval, func() { a.update(a.flushScrobbles) })
 		a.desktop.win.OnClosed(a.stopTicking)
@@ -262,6 +265,7 @@ func (a *app) shutdown() {
 	a.shutdownOnce.Do(func() {
 		a.stopTicking()
 		a.closeMCP()
+		a.closeLANSync()
 		a.aiCheck.stop()
 		a.notificationArtwork.stop()
 		a.finishEpisodeProgress(true)

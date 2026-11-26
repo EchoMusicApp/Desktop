@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
+	"github.com/EchoMusicApp/Echo-Music/internal/lansync"
 	"github.com/EchoMusicApp/Echo-Music/internal/lru"
 	"github.com/EchoMusicApp/Echo-Music/internal/playstate"
 	"github.com/EchoMusicApp/Echo-Music/internal/settings"
@@ -87,6 +88,23 @@ func (a *app) playFromWithContinuation(item youtube.MusicItem, tracks []youtube.
 	if item.VideoID == "" {
 		return
 	}
+	if peer, ok := a.activeLANPeer(); ok && time.Now().After(a.lanSuppressUntil) {
+		items := tracks
+		if len(items) == 0 {
+			items = []youtube.MusicItem{item}
+			index = 0
+		} else if index < 0 || index >= len(items) {
+			index = 0
+			for i, it := range items {
+				if it.VideoID == item.VideoID {
+					index = i
+					break
+				}
+			}
+		}
+		a.sendTracksHandoffToPeer(peer, items, index, 0, source)
+		return
+	}
 	a.queueRest.stop()
 	a.clearQueueSelection()
 	a.queue.replace(item, tracks, index, source)
@@ -113,6 +131,20 @@ func (a *app) playFromWithContinuation(item youtube.MusicItem, tracks []youtube.
 const maxSkips = 3
 
 func (a *app) start(item youtube.MusicItem) {
+	if peer, ok := a.activeLANPeer(); ok && time.Now().After(a.lanSuppressUntil) {
+		for i, it := range a.queue.items {
+			if it.VideoID == item.VideoID {
+				a.sendRemoteControl(peer, lansync.ControlCommand{Action: "play_index", Index: i})
+				return
+			}
+		}
+		a.sendTracksHandoffToPeer(peer, []youtube.MusicItem{item}, 0, 0, a.queue.source)
+		return
+	}
+	a.startLocal(item)
+}
+
+func (a *app) startLocal(item youtube.MusicItem) {
 	a.skipped = 0
 	a.aiRefills = 0
 	a.startTrack(item, false)
@@ -416,6 +448,16 @@ func (a *app) poll() {
 		}
 		return
 	}
+	if a.lanActivePeerID != "" {
+		if a.effectivePlaying() && !a.scrubbing {
+			next := a.scrub + 0.25
+			if a.total > 0 {
+				next = min(next, a.total.Seconds())
+			}
+			a.scrub = next
+		}
+		return
+	}
 	if a.player.Playing() {
 		a.syncEpisodeProgress()
 		if a.recoveries > 0 && a.player.Position() > a.recoveredFrom+recoveryHealthy {
@@ -440,6 +482,14 @@ func (a *app) trackEnded() {
 }
 
 func (a *app) advance() {
+	if peer, ok := a.activeLANPeer(); ok {
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "next"})
+		return
+	}
+	a.advanceLocal()
+}
+
+func (a *app) advanceLocal() {
 	if next, ok := a.queue.nextEligible(a.settings.AutoPlay, a.repeat, a.settings.AutoSkipDisliked); ok {
 		a.startNext(a.queue.moveTo(next))
 		return
@@ -474,14 +524,31 @@ func (a *app) stopAtQueueEnd() {
 }
 
 func (a *app) previous() {
-	if a.queue.index == 0 || a.player.Position() > 3*time.Second {
-		a.seek(0)
+	if peer, ok := a.activeLANPeer(); ok {
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "previous"})
 		return
 	}
-	a.start(a.queue.moveTo(a.queue.index - 1))
+	a.previousLocal()
+}
+
+func (a *app) previousLocal() {
+	if a.queue.index == 0 || a.player.Position() > 3*time.Second {
+		a.seekLocal(0)
+		return
+	}
+	a.startLocal(a.queue.moveTo(a.queue.index - 1))
 }
 
 func (a *app) seek(position time.Duration) {
+	if peer, ok := a.activeLANPeer(); ok {
+		a.scrub = position.Seconds()
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "seek", PositionMs: position.Milliseconds()})
+		return
+	}
+	a.seekLocal(position)
+}
+
+func (a *app) seekLocal(position time.Duration) {
 	a.scrobble.listen.Break()
 	a.seekTarget = position
 	if !a.seeking.busy() {
@@ -508,29 +575,45 @@ func (a *app) applySeek() {
 }
 
 func (a *app) togglePlay() {
+	if peer, ok := a.activeLANPeer(); ok {
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "toggle"})
+		return
+	}
+	a.togglePlayLocal()
+}
+
+func (a *app) togglePlayLocal() {
 	if a.starting() {
 		return
 	}
 	if a.playErr != "" || !a.player.Active() {
 		if a.current.VideoID != "" {
-			a.start(a.current)
+			a.startLocal(a.current)
 		}
 		return
 	}
 	if a.player.Playing() {
-		a.pause()
+		a.pauseLocal()
 	} else {
-		a.resume()
+		a.resumeLocal()
 	}
 }
 
 func (a *app) resume() {
+	if peer, ok := a.activeLANPeer(); ok {
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "play"})
+		return
+	}
+	a.resumeLocal()
+}
+
+func (a *app) resumeLocal() {
 	if a.starting() || a.player.Playing() {
 		return
 	}
 	if a.playErr != "" || !a.player.Active() || a.player.Ended() {
 		if a.current.VideoID != "" {
-			a.start(a.current)
+			a.startLocal(a.current)
 		}
 	} else {
 		a.player.Resume()
@@ -542,12 +625,30 @@ func (a *app) resume() {
 }
 
 func (a *app) pause() {
+	if peer, ok := a.activeLANPeer(); ok {
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "pause"})
+		return
+	}
+	a.pauseLocal()
+}
+
+func (a *app) pauseLocal() {
 	a.player.Pause()
 	a.finishEpisodeProgress(false)
 	a.syncSystemMedia()
 }
 
 func (a *app) setShuffle(on bool) {
+	if peer, ok := a.activeLANPeer(); ok {
+		a.shuffle = on
+		v := on
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "shuffle", Shuffle: &v})
+		return
+	}
+	a.setShuffleLocal(on)
+}
+
+func (a *app) setShuffleLocal(on bool) {
 	a.clearQueueSelection()
 	a.shuffle = on
 	if on {
@@ -560,6 +661,15 @@ func (a *app) setShuffle(on bool) {
 }
 
 func (a *app) setVolume(v float64) {
+	if peer, ok := a.activeLANPeer(); ok {
+		a.volume = min(max(v, 0), 100)
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "volume", Volume: a.volume / 100.0})
+		return
+	}
+	a.setVolumeLocal(v)
+}
+
+func (a *app) setVolumeLocal(v float64) {
 	a.volume = min(max(v, 0), 100)
 	if a.volume > 0 {
 		a.muted = a.volume
@@ -628,6 +738,17 @@ func (a *app) toggleMute() {
 
 func (a *app) cycleRepeat() {
 	a.repeat = a.repeat.next()
+	if peer, ok := a.activeLANPeer(); ok {
+		rep := "off"
+		switch a.repeat {
+		case repeatTrack:
+			rep = "one"
+		case repeatQueue:
+			rep = "all"
+		}
+		a.sendRemoteControl(peer, lansync.ControlCommand{Action: "repeat", Repeat: rep})
+		return
+	}
 	a.syncPreload()
 	a.syncSystemMedia()
 }

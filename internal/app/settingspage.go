@@ -225,6 +225,10 @@ func (a *app) settingsBentoPage(c *ui.Context, sc m3.Scheme) {
 						a.soundCard(c)
 						sectionTitle("System")
 						a.desktopCard(c)
+						sectionTitle("Echo Connect")
+						a.settingsCard(c, "Echo Connect", m3.IconSmartphone, func() {
+							a.lanSyncSetting(c)
+						})
 						sectionTitle("Storage & privacy")
 						a.playbackCacheCard(c)
 						a.privacyCard(c)

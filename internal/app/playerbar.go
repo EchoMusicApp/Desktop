@@ -31,7 +31,7 @@ func (a *app) transport(c *ui.Context, size float32, gap float32) {
 			}
 		}, keymap.Previous)
 		loading := a.loading()
-		playing := a.player.Playing() && !loading
+		playing := a.effectivePlaying() && !loading
 		icon, label := m3.IconPlay, "Play"
 		switch {
 		case loading:
@@ -82,7 +82,7 @@ func (a *app) barScrubber(c *ui.Context) {
 		m3.Text(c, m3.LabelSmall, clock(time.Duration(*position*float64(time.Second)))).
 			MinWidth(34).NoWrap().TextAlign(ui.End).Shrink(0).TextColor(sc.OnSurfaceVariant).FontFeatures("tnum")
 		slider := m3.Slider(c, position, 0, total, m3.SliderSpec{
-			Label: "Position", Key: "scrubber", Thickness: 3, Wavy: a.settings.WavyProgress, Waving: a.player.Playing(), Disabled: !known,
+			Label: "Position", Key: "scrubber", Thickness: 3, Wavy: a.settings.WavyProgress, Waving: a.effectivePlaying(), Disabled: !known,
 		})
 		if slider.Pressed() {
 			a.scrubbing = true
@@ -112,7 +112,7 @@ func (a *app) scrubber(c *ui.Context) {
 		m3.Text(c, m3.LabelMedium, clock(time.Duration(*position*float64(time.Second)))).
 			MinWidth(40).NoWrap().TextAlign(ui.End).Shrink(0).TextColor(sc.OnSurfaceVariant).FontFeatures("tnum")
 		slider := m3.Slider(c, position, 0, total, m3.SliderSpec{
-			Label: "Position", Key: "scrubber", Wavy: a.settings.WavyProgress, Waving: a.player.Playing(), Disabled: !known,
+			Label: "Position", Key: "scrubber", Wavy: a.settings.WavyProgress, Waving: a.effectivePlaying(), Disabled: !known,
 		})
 		if slider.Pressed() {
 			a.scrubbing = true
@@ -423,6 +423,36 @@ func (a *app) playerBar(c *ui.Context) {
 				a.compactVolumeControl(c)
 			}
 			a.speedButton(c, "bar-speed")
+			if len(a.lanPeers) > 0 || a.lanActivePeerID != "" {
+				activePeer, isLive := a.activeLANPeer()
+				label := "Echo Connect"
+				icon := m3.IconSpeaker
+				if isLive {
+					label = "Playing on " + activePeer.Name
+					if activePeer.Platform == "android" {
+						icon = m3.IconSmartphone
+					} else {
+						icon = m3.IconComputer
+					}
+				}
+				devBtn := m3.IconButton(c, m3.IconButtonSpec{
+					Icon:     icon,
+					Label:    label,
+					Key:      "bar-lan-devices",
+					Toggle:   true,
+					Selected: isLive,
+				})
+				if devBtn.Clicked() {
+					a.nowPlaying.barDevicesMenu = !a.nowPlaying.barDevicesMenu
+				}
+				open := a.nowPlaying.barDevicesMenu
+				if open {
+					a.renderDeviceMenu(c, devBtn, &open, "bar-devices")
+					if !open {
+						a.nowPlaying.barDevicesMenu = false
+					}
+				}
+			}
 			if m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconQueue, Label: "Up next", Key: "bar-queue"}).Clicked() {
 				a.openPlayer(tabQueue, true)
 			}

@@ -57,6 +57,7 @@ type nowPlayingState struct {
 	speedMenu            string
 	speedChoices         bool
 	devicesMenu          bool
+	barDevicesMenu       bool
 }
 
 type relatedState struct {
@@ -326,14 +327,22 @@ func (a *app) trackLineCentered(c *ui.Context, title, subtitle m3.Role, links bo
 func (a *app) devicesButton(c *ui.Context, key string) {
 	sc := m3.Of(c).Scheme
 	devices, err := getAudioOutputDevices()
-	if err != nil || len(devices) == 0 {
-		return
+	if err != nil {
+		devices = nil
 	}
-	currentDevice := "Audio Output"
-	for _, dev := range devices {
-		if dev.IsDefault {
-			currentDevice = dev.Name
-			break
+	currentDevice := "This Mac"
+	pillIcon := m3.IconComputer
+	if activePeer, isLive := a.activeLANPeer(); isLive {
+		currentDevice = activePeer.Name
+		if activePeer.Platform == "android" {
+			pillIcon = m3.IconSmartphone
+		}
+	} else {
+		for _, dev := range devices {
+			if dev.IsDefault {
+				currentDevice = dev.Name
+				break
+			}
 		}
 	}
 
@@ -342,9 +351,9 @@ func (a *app) devicesButton(c *ui.Context, key string) {
 		Background(m3.StateFill(sc.SurfaceContainerHighest.Alpha(0.88), sc.OnSurface, btn.Hovered(), btn.Pressed(), btn.FocusVisible())).
 		Border(1, sc.OutlineVariant.Alpha(0.55)).
 		AlignItems(ui.Center).Gap(6).Cursor(ui.CursorPointer).
-		Label("Audio device: " + currentDevice).Tooltip("Select audio output device")
+		Label("Audio device: " + currentDevice).Tooltip("Select playback device")
 	btn.Children(func() {
-		ui.Icon(c, m3.IconSpeaker).FontSize(14).TextColor(sc.Primary).Shrink(0)
+		ui.Icon(c, pillIcon).FontSize(14).TextColor(sc.Primary).Shrink(0)
 		m3.Text(c, m3.LabelSmall, currentDevice).TextColor(sc.OnSurface).SingleLine().MaxWidth(140).FontWeight(500)
 		ui.Icon(c, m3.IconExpandMore).FontSize(13).TextColor(sc.OnSurfaceVariant).Shrink(0)
 	})
@@ -357,43 +366,121 @@ func (a *app) devicesButton(c *ui.Context, key string) {
 	if !open {
 		return
 	}
+	a.renderDeviceMenu(c, btn, &open, key)
+	if !open {
+		a.nowPlaying.devicesMenu = false
+	}
+}
 
-	m3.Menu(c, btn, &open, 260, func() {
+func (a *app) renderDeviceMenu(c *ui.Context, anchor ui.Element, open *bool, key string) {
+	sc := m3.Of(c).Scheme
+	devices, _ := getAudioOutputDevices()
+	m3.Menu(c, anchor, open, 276, func() {
 		ui.Column(c.Key(key + "-list")).Padding(4, 0).Gap(2).Children(func() {
 			ui.Row(c).Padding(6, 14, 4, 14).Children(func() {
-				m3.Text(c, m3.LabelSmall, "AUDIO OUTPUT DEVICES").TextColor(sc.OnSurfaceVariant).FontFeatures("case")
+				m3.Text(c, m3.LabelSmall, "THIS MAC").TextColor(sc.OnSurfaceVariant).FontFeatures("case")
 			})
-			for _, dev := range devices {
-				d := dev
-				row := ui.ButtonBase(c.Key(key + "-dev-" + strconv.Itoa(int(d.ID))))
+			if len(devices) == 0 {
+				isLocalActive := a.lanActivePeerID == ""
+				row := ui.ButtonBase(c.Key(key + "-local-mac"))
 				row.Height(40).PaddingX(12).Gap(10).AlignItems(ui.Center).Radius(m3.Medium).Cursor(ui.CursorPointer).
-					Label(d.Name).Role(ui.RoleMenuItem).
+					Label("This Mac").Role(ui.RoleMenuItem).
 					Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
 				row.Children(func() {
-					if d.IsDefault {
-						ui.Icon(c, m3.IconCheck).FontSize(16).TextColor(sc.Primary).Shrink(0)
-					} else {
-						ui.Box(c).Size(16, 16).Shrink(0)
-					}
-					devColor := sc.OnSurfaceVariant
+					col := sc.OnSurfaceVariant
 					textColor := sc.OnSurface
-					if d.IsDefault {
-						devColor = sc.Primary
+					if isLocalActive {
+						col = sc.Primary
 						textColor = sc.Primary
 					}
-					ui.Icon(c, m3.IconSpeaker).FontSize(16).TextColor(devColor).Shrink(0)
-					m3.LabelMedium.Style(ui.Text(c, d.Name), false).Grow(1).SingleLine().TextColor(textColor)
+					ui.Icon(c, m3.IconComputer).FontSize(16).TextColor(col).Shrink(0)
+					m3.LabelMedium.Style(ui.Text(c, "This Mac"), false).Grow(1).SingleLine().TextColor(textColor)
+					if isLocalActive {
+						ui.Icon(c, m3.IconCheck).FontSize(16).TextColor(sc.Primary).Shrink(0)
+					}
 				})
 				if row.Clicked() {
-					_ = setAudioOutputDevice(d.ID)
-					a.nowPlaying.devicesMenu = false
+					if peer, ok := a.activeLANPeer(); ok {
+						a.pullHandoffFromPeer(peer)
+					} else {
+						a.disconnectLANController()
+					}
+					*open = false
+				}
+			} else {
+				for _, dev := range devices {
+					d := dev
+					isSelected := a.lanActivePeerID == "" && d.IsDefault
+					row := ui.ButtonBase(c.Key(key + "-dev-" + strconv.Itoa(int(d.ID))))
+					row.Height(40).PaddingX(12).Gap(10).AlignItems(ui.Center).Radius(m3.Medium).Cursor(ui.CursorPointer).
+						Label(d.Name).Role(ui.RoleMenuItem).
+						Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
+					row.Children(func() {
+						devColor := sc.OnSurfaceVariant
+						textColor := sc.OnSurface
+						if isSelected {
+							devColor = sc.Primary
+							textColor = sc.Primary
+						}
+						ui.Icon(c, m3.IconComputer).FontSize(16).TextColor(devColor).Shrink(0)
+						m3.LabelMedium.Style(ui.Text(c, d.Name), false).Grow(1).SingleLine().TextColor(textColor)
+						if isSelected {
+							ui.Icon(c, m3.IconCheck).FontSize(16).TextColor(sc.Primary).Shrink(0)
+						}
+					})
+					if row.Clicked() {
+						if peer, ok := a.activeLANPeer(); ok {
+							a.pullHandoffFromPeer(peer)
+						} else if a.lanActivePeerID != "" {
+							a.disconnectLANController()
+						}
+						_ = setAudioOutputDevice(d.ID)
+						*open = false
+					}
+				}
+			}
+			if a.lanSyncEnabled() && len(a.lanPeers) > 0 {
+				ui.Row(c).Padding(8, 14, 4, 14).Children(func() {
+					m3.Text(c, m3.LabelSmall, "ECHO CONNECT").TextColor(sc.Primary).FontFeatures("case")
+				})
+				for _, peer := range a.lanPeers {
+					p := peer
+					isLive := a.lanActivePeerID == p.ID
+					row := ui.ButtonBase(c.Key(key + "-lan-" + p.ID))
+					row.Height(40).PaddingX(12).Gap(10).AlignItems(ui.Center).Radius(m3.Medium).Cursor(ui.CursorPointer).
+						Label(p.Name).Role(ui.RoleMenuItem).
+						Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
+					row.Children(func() {
+						peerIcon := m3.IconComputer
+						if p.Platform == "android" {
+							peerIcon = m3.IconSmartphone
+						}
+						iconColor := sc.OnSurfaceVariant
+						textColor := sc.OnSurface
+						if isLive {
+							iconColor = sc.Primary
+							textColor = sc.Primary
+						}
+						ui.Icon(c, peerIcon).FontSize(16).TextColor(iconColor).Shrink(0)
+						m3.LabelMedium.Style(ui.Text(c, p.Name), false).Grow(1).SingleLine().TextColor(textColor)
+						if isLive {
+							ui.Icon(c, m3.IconCheck).FontSize(16).TextColor(sc.Primary).Shrink(0)
+						}
+					})
+					if row.Clicked() {
+						if !isLive {
+							if a.current.VideoID != "" {
+								a.sendHandoffToPeer(p)
+							} else {
+								a.attachLANController(p)
+							}
+						}
+						*open = false
+					}
 				}
 			}
 		})
 	})
-	if !open {
-		a.nowPlaying.devicesMenu = false
-	}
 }
 
 func (a *app) nowPlayingArtwork(c *ui.Context, imageSize int, artSize, radius float32) {

@@ -69,6 +69,9 @@ type Settings struct {
 	UsagePingSent      bool              `json:"usagePingSent,omitempty"`
 	CrashReports       bool              `json:"crashReports,omitempty"`
 	AutoCheckUpdates   *bool             `json:"autoCheckUpdates,omitempty"`
+	LANSync            *bool             `json:"lanSync,omitempty"`
+	DeviceID           string            `json:"deviceId,omitempty"`
+	DeviceName         string            `json:"deviceName,omitempty"`
 }
 
 type TrayMark string

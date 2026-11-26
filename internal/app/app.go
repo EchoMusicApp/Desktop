@@ -16,6 +16,7 @@ import (
 	"github.com/EchoMusicApp/Echo-Music/internal/cookies"
 	"github.com/EchoMusicApp/Echo-Music/internal/discordrpc"
 	"github.com/EchoMusicApp/Echo-Music/internal/history"
+	"github.com/EchoMusicApp/Echo-Music/internal/lansync"
 	"github.com/EchoMusicApp/Echo-Music/internal/lru"
 	"github.com/EchoMusicApp/Echo-Music/internal/lyrics"
 	"github.com/EchoMusicApp/Echo-Music/internal/mcpcontrol"
@@ -42,6 +43,14 @@ type app struct {
 	mcpLastTool                          string
 	mcpLastAt                            time.Time
 	mcpLastFailed                        bool
+
+	lan              *lansync.Manager
+	lanPeers         []lansync.Peer
+	lanRemoteStates  map[string]lansync.PeerState
+	lanActivePeerID  string
+	lanSuppressUntil time.Time
+	lanError         string
+	lanStatus        string
 
 	desktop      *desktop
 	router       *ui.Router
