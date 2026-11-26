@@ -36,7 +36,23 @@
 - **10-Band Equalizer & Audio Controls**: Real-time 10-band EQ (`31 Hz – 16 kHz`) with presets, loudness normalization, configurable track crossfade, playback speed, and audio output switching.
 - **Material You & Dynamic Themes**: Monochrome, Tonal Spot, Vibrant, Expressive, and Gradient Aurora palettes with album artwork color extraction and Matugen support.
 - **Offline Cache, Downloads & Listening Stats**: Automatic song caching, offline track downloads, on-device listening history & stats, Discord Rich Presence, and local MCP AI control.
+- **Echo Connect (LAN Continuity & Sync)**: Pair with Echo Music Android via a 6-digit code to hand off playback at the exact millisecond, remote-control either device, auto-login your Google account, and sync local playlists, Spotify playlists, and podcast progress every 5 minutes.
 - **Release Update Notifications**: Checks `EchoMusicApp/Desktop` release tags and opens [`desktop.echomusic.fun/update`](https://desktop.echomusic.fun/update) when a newer version is available.
+
+---
+
+## Echo Connect (LAN Continuity & Sync)
+
+**Echo Connect** pairs **Echo Music Desktop** with **[Echo Music (Android)](https://github.com/EchoMusicApp/Echo-Music)** over your local Wi-Fi network using mDNS (`_echomusic._tcp.`) and a local HTTP/1.1 JSON API — no external servers required.
+
+### Highlights
+- **Bidirectional 6-Digit Pairing**: Pair from **Settings → Echo Connect** on either Desktop or Android using a 60-second auto-refreshing 6-digit verification code.
+- **Automatic Google Account Sync**: Signs Desktop into your YouTube Music Google account automatically once paired.
+- **Local & Spotify Playlist Sync**: Syncs locally created playlists bidirectionally and brings your Android Spotify playlists into **Library → Spotify Playlists** (with on-demand YouTube Music playback resolution).
+- **5-Minute Background Sync & Force Sync**: Automatically syncs every 5 minutes and includes a **Force Sync** button plus timestamped **Sync Activity** logs.
+- **Live Playback Handoff & Remote Control**: Switch between **This Mac** and your paired phone directly from the playerbar **Echo Connect** button or **Now Playing** device picker, with live track mirroring, seeking, transport controls, and volume sync.
+
+📖 **Full Documentation**: See [docs/ECHO_CONNECT.md](./docs/ECHO_CONNECT.md) for setup instructions, sync behavior, API endpoints, and troubleshooting.
 
 ---
 
