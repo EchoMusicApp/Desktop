@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/rand/v2"
+	"strings"
 	"time"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
@@ -157,6 +158,20 @@ func (a *app) withCollectionTracksResult(item youtube.MusicItem, key string, all
 	target := item.Target()
 	if target.Kind != youtube.TargetAlbum && target.Kind != youtube.TargetPlaylist && target.Kind != youtube.TargetArtist {
 		return
+	}
+	if target.Kind == youtube.TargetPlaylist && strings.HasPrefix(target.ID, "synced:") {
+		if res := a.syncedPlaylistBrowseResult(target.ID); res != nil {
+			var playable []youtube.MusicItem
+			for _, it := range res.Items {
+				if it.VideoID != "" {
+					playable = append(playable, it)
+				}
+			}
+			if len(playable) > 0 {
+				then(playable, "", nil)
+				return
+			}
+		}
 	}
 	if a.isOpening(key) {
 		then(nil, "", errors.New("wait for Echo Music to finish opening this collection"))

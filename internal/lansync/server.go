@@ -87,6 +87,60 @@ type EpisodesSyncPayload struct {
 	Episodes []EpisodeDTO `json:"episodes"`
 }
 
+// PairStartPayload is sent by Android when the user selects a Desktop peer to pair with.
+type PairStartPayload struct {
+	DeviceID    string `json:"deviceId"`
+	DeviceName  string `json:"deviceName"`
+	Platform    string `json:"platform"`
+	Host        string `json:"host,omitempty"`
+	Port        int    `json:"port,omitempty"`
+	ExpiresAtMs int64  `json:"expiresAtMs"`
+}
+
+// PairVerifyRequest is sent to POST /v1/pair/verify with the 6-digit pairing code.
+type PairVerifyRequest struct {
+	DeviceID   string `json:"deviceId"`
+	DeviceName string `json:"deviceName"`
+	Code       string `json:"code"`
+}
+
+// PairVerifyResponse is returned by POST /v1/pair/verify.
+type PairVerifyResponse struct {
+	OK        bool   `json:"ok"`
+	PairToken string `json:"pairToken,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// AccountSyncDTO carries the Google / YouTube Music session cookie & metadata between paired devices.
+type AccountSyncDTO struct {
+	Cookie        string `json:"cookie,omitempty"`
+	Name          string `json:"name,omitempty"`
+	Email         string `json:"email,omitempty"`
+	ChannelHandle string `json:"channelHandle,omitempty"`
+	UpdatedAtMs   int64  `json:"updatedAtMs,omitempty"`
+}
+
+// PlaylistSyncDTO represents a local or Spotify playlist synced between paired devices.
+type PlaylistSyncDTO struct {
+	SyncID      string     `json:"syncId"`
+	Title       string     `json:"title"`
+	Thumbnail   string     `json:"thumbnail,omitempty"`
+	IsSpotify   bool       `json:"isSpotify,omitempty"`
+	UpdatedAtMs int64      `json:"updatedAtMs,omitempty"`
+	Tracks      []TrackDTO `json:"tracks"`
+}
+
+// SyncBundle is exchanged on POST /v1/sync between paired devices.
+type SyncBundle struct {
+	SenderID         string            `json:"senderId"`
+	SenderName       string            `json:"senderName"`
+	SentAtMs         int64             `json:"sentAtMs"`
+	GoogleAccount    *AccountSyncDTO   `json:"googleAccount,omitempty"`
+	LocalPlaylists   []PlaylistSyncDTO `json:"localPlaylists,omitempty"`
+	SpotifyPlaylists []PlaylistSyncDTO `json:"spotifyPlaylists,omitempty"`
+	Episodes         []EpisodeDTO      `json:"episodes,omitempty"`
+}
+
 // Handler bridges the LAN Sync HTTP server to the host app's main-thread state.
 type Handler interface {
 	GetState() PeerState
@@ -94,6 +148,11 @@ type Handler interface {
 	ApplyHandoff(payload HandoffPayload) PeerState
 	MergeEpisodes(episodes []EpisodeDTO) []EpisodeDTO
 	OnPeersChanged(peers []Peer)
+	OnPairStart(req PairStartPayload)
+	OnPairVerify(req PairVerifyRequest) PairVerifyResponse
+	OnUnpair(deviceID string)
+	BuildSyncBundle() SyncBundle
+	ApplySyncBundle(bundle SyncBundle) SyncBundle
 }
 
 type Manager struct {
@@ -171,6 +230,10 @@ func (m *Manager) Start(parent context.Context) error {
 	mux.HandleFunc("/v1/control", m.handleControl)
 	mux.HandleFunc("/v1/handoff", m.handleHandoff)
 	mux.HandleFunc("/v1/episodes/sync", m.handleEpisodesSync)
+	mux.HandleFunc("/v1/pair/start", m.handlePairStart)
+	mux.HandleFunc("/v1/pair/verify", m.handlePairVerify)
+	mux.HandleFunc("/v1/pair/unpair", m.handlePairUnpair)
+	mux.HandleFunc("/v1/sync", m.handleSync)
 
 	srv := &http.Server{
 		Handler:           mux,
@@ -349,6 +412,60 @@ func (m *Manager) handleEpisodesSync(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, EpisodesSyncPayload{Episodes: merged})
 }
 
+func (m *Manager) handlePairStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload PairStartPayload
+	if err := decodeJSONBody(r.Body, &payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	m.handler.OnPairStart(payload)
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (m *Manager) handlePairVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req PairVerifyRequest
+	if err := decodeJSONBody(r.Body, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, m.handler.OnPairVerify(req))
+}
+
+func (m *Manager) handlePairUnpair(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		DeviceID string `json:"deviceId"`
+	}
+	_ = decodeJSONBody(r.Body, &payload)
+	m.handler.OnUnpair(payload.DeviceID)
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (m *Manager) handleSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var bundle SyncBundle
+	if err := decodeJSONBody(r.Body, &bundle); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	reply := m.handler.ApplySyncBundle(bundle)
+	writeJSON(w, reply)
+}
+
 // --- Client RPCs ---
 
 func (m *Manager) FetchState(ctx context.Context, peer Peer) (PeerState, error) {
@@ -400,6 +517,26 @@ func (m *Manager) SyncEpisodes(ctx context.Context, peer Peer, episodes []Episod
 	var out EpisodesSyncPayload
 	err := m.postJSONWithFallback(ctx, peer, "/v1/episodes/sync", EpisodesSyncPayload{Episodes: episodes}, &out)
 	return out.Episodes, err
+}
+
+func (m *Manager) SendPairStart(ctx context.Context, peer Peer, req PairStartPayload) error {
+	return m.postJSONWithFallback(ctx, peer, "/v1/pair/start", req, nil)
+}
+
+func (m *Manager) SendPairVerify(ctx context.Context, peer Peer, req PairVerifyRequest) (PairVerifyResponse, error) {
+	var out PairVerifyResponse
+	err := m.postJSONWithFallback(ctx, peer, "/v1/pair/verify", req, &out)
+	return out, err
+}
+
+func (m *Manager) SendUnpair(ctx context.Context, peer Peer, deviceID string) error {
+	return m.postJSONWithFallback(ctx, peer, "/v1/pair/unpair", map[string]string{"deviceId": deviceID}, nil)
+}
+
+func (m *Manager) SendSync(ctx context.Context, peer Peer, bundle SyncBundle) (SyncBundle, error) {
+	var out SyncBundle
+	err := m.postJSONWithFallback(ctx, peer, "/v1/sync", bundle, &out)
+	return out, err
 }
 
 func (m *Manager) postJSONWithFallback(ctx context.Context, peer Peer, path string, body any, out any) error {

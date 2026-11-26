@@ -142,6 +142,12 @@ func (a *app) openTarget(target youtube.Target, heading detail) {
 }
 
 func (a *app) loadPage(r *route, id string) {
+	if r.id == routePlaylist && strings.HasPrefix(id, "synced:") {
+		if res := a.syncedPlaylistBrowseResult(id); res != nil {
+			a.applyPage(a.page, r, a.path(), a.client(), res, false)
+			return
+		}
+	}
 	client := a.client()
 	path := a.path()
 	p := a.page
@@ -337,6 +343,15 @@ func (a *app) applyPage(p *pageData, r *route, path string, client *youtube.Clie
 	if len(result.Sections) == 0 {
 		p.feed.items = result.Items
 	}
+	if !partial && r.id == routeLibrary {
+		if extra := a.syncedLibrarySections(); len(extra) > 0 {
+			if len(p.feed.sections) == 0 && len(p.feed.items) > 0 {
+				p.feed.sections = append(p.feed.sections, youtube.MusicSection{Title: "Library", Items: p.feed.items})
+				p.feed.items = nil
+			}
+			p.feed.sections = append(p.feed.sections, extra...)
+		}
+	}
 	p.feed.more = result.ContinuationToken
 	if partial {
 		p.feed.more = ""
@@ -475,6 +490,29 @@ func (a *app) activateAt(item youtube.MusicItem, tracks []youtube.MusicItem, ind
 	case youtube.TargetAlbum, youtube.TargetPlaylist, youtube.TargetArtist, youtube.TargetPodcast:
 		a.openTarget(target, detail{title: item.Title, subtitle: item.Subtitle, art: item.Thumbnail})
 	case youtube.TargetNone:
+		if item.VideoID == "" && item.Title != "" {
+			query := strings.TrimSpace(item.Title + " " + item.Artist)
+			client := a.client()
+			spawn(a, func() *youtube.MusicItem {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				res, err := client.Search(ctx, query, youtube.SearchOptions{})
+				if err != nil || res == nil {
+					return nil
+				}
+				for _, it := range res.Items {
+					if it.VideoID != "" {
+						cp := it
+						return &cp
+					}
+				}
+				return nil
+			}, func(found *youtube.MusicItem) {
+				if found != nil {
+					a.play(*found, []youtube.MusicItem{*found})
+				}
+			})
+		}
 	}
 }
 

@@ -51,6 +51,12 @@ type app struct {
 	lanSuppressUntil time.Time
 	lanError         string
 	lanStatus        string
+	pairDialog       *pairDialogState
+	hostPair         *hostPairState
+	syncedPlaylists  []lansync.PlaylistSyncDTO
+	lanSyncLogs      []string
+	lanLastSyncAt    time.Time
+	lanSyncBusy      bool
 
 	desktop      *desktop
 	router       *ui.Router

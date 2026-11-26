@@ -66,6 +66,8 @@ func (a *app) view(c *ui.Context) {
 		a.fullScreenView(c)
 	}
 	a.signInDialog(c)
+	a.pairCodeDialog(c)
+	a.hostPairDialog(c)
 	a.newPlaylistDialog(c)
 	a.deletePlaylistDialog(c)
 	a.addToPlaylistDialog(c)

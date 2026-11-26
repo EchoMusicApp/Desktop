@@ -121,7 +121,7 @@ func isArtistID(id string) bool {
 const browsePlaylistPrefix = "VL"
 
 func isBrowsablePlaylist(id string) bool {
-	return strings.HasPrefix(id, browsePlaylistPrefix) || strings.HasPrefix(id, "PL")
+	return strings.HasPrefix(id, browsePlaylistPrefix) || strings.HasPrefix(id, "PL") || strings.HasPrefix(id, "synced:")
 }
 
 type MusicItem struct {

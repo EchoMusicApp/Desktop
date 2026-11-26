@@ -426,14 +426,9 @@ func (a *app) playerBar(c *ui.Context) {
 			if len(a.lanPeers) > 0 || a.lanActivePeerID != "" {
 				activePeer, isLive := a.activeLANPeer()
 				label := "Echo Connect"
-				icon := m3.IconSpeaker
+				icon := m3.IconEchoConnect
 				if isLive {
 					label = "Playing on " + activePeer.Name
-					if activePeer.Platform == "android" {
-						icon = m3.IconSmartphone
-					} else {
-						icon = m3.IconComputer
-					}
 				}
 				devBtn := m3.IconButton(c, m3.IconButtonSpec{
 					Icon:     icon,

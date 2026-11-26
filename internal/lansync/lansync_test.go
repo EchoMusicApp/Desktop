@@ -39,7 +39,14 @@ func (f *fakeHandler) MergeEpisodes(episodes []EpisodeDTO) []EpisodeDTO {
 	f.episodes = MergeEpisodeLists(f.episodes, episodes)
 	return f.episodes
 }
-func (f *fakeHandler) OnPeersChanged([]Peer) {}
+func (f *fakeHandler) OnPeersChanged([]Peer)                 {}
+func (f *fakeHandler) OnPairStart(PairStartPayload)          {}
+func (f *fakeHandler) OnPairVerify(PairVerifyRequest) PairVerifyResponse {
+	return PairVerifyResponse{OK: true}
+}
+func (f *fakeHandler) OnUnpair(string)                       {}
+func (f *fakeHandler) BuildSyncBundle() SyncBundle           { return SyncBundle{} }
+func (f *fakeHandler) ApplySyncBundle(b SyncBundle) SyncBundle { return b }
 
 func TestMDNSPacketRoundtrip(t *testing.T) {
 	pkt := buildServiceResponse(

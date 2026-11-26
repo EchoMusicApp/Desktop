@@ -446,15 +446,13 @@ func (a *app) renderDeviceMenu(c *ui.Context, anchor ui.Element, open *bool, key
 				for _, peer := range a.lanPeers {
 					p := peer
 					isLive := a.lanActivePeerID == p.ID
+					isPaired := a.settings.PairedPeerID == p.ID
 					row := ui.ButtonBase(c.Key(key + "-lan-" + p.ID))
 					row.Height(40).PaddingX(12).Gap(10).AlignItems(ui.Center).Radius(m3.Medium).Cursor(ui.CursorPointer).
 						Label(p.Name).Role(ui.RoleMenuItem).
 						Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
 					row.Children(func() {
-						peerIcon := m3.IconComputer
-						if p.Platform == "android" {
-							peerIcon = m3.IconSmartphone
-						}
+						peerIcon := m3.IconEchoConnect
 						iconColor := sc.OnSurfaceVariant
 						textColor := sc.OnSurface
 						if isLive {
@@ -463,12 +461,16 @@ func (a *app) renderDeviceMenu(c *ui.Context, anchor ui.Element, open *bool, key
 						}
 						ui.Icon(c, peerIcon).FontSize(16).TextColor(iconColor).Shrink(0)
 						m3.LabelMedium.Style(ui.Text(c, p.Name), false).Grow(1).SingleLine().TextColor(textColor)
-						if isLive {
+						if !isPaired {
+							m3.Text(c, m3.LabelSmall, "Pair in Settings").TextColor(sc.OnSurfaceVariant)
+						} else if isLive {
 							ui.Icon(c, m3.IconCheck).FontSize(16).TextColor(sc.Primary).Shrink(0)
 						}
 					})
 					if row.Clicked() {
-						if !isLive {
+						if !isPaired {
+							a.startDesktopPairing(p)
+						} else if !isLive {
 							if a.current.VideoID != "" {
 								a.sendHandoffToPeer(p)
 							} else {

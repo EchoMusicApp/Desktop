@@ -119,6 +119,7 @@ func Run() {
 		a.syncMCP()
 		a.syncLANSync()
 		a.every(30*time.Second, a.syncEpisodesWithPeers)
+		a.every(5*time.Minute, a.syncWithPairedPeer)
 		a.every(1*time.Second, a.refreshLANRemoteStates)
 		a.watchSession()
 		a.every(flushInterval, func() { a.update(a.flushScrobbles) })

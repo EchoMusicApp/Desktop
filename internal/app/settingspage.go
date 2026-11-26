@@ -209,6 +209,10 @@ func (a *app) settingsBentoPage(c *ui.Context, sc m3.Scheme) {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Padding(8, pageGutter, a.clearance()).Children(func() {
 			ui.Column(c).FillWidth().MaxWidth(1060).Gap(14).Children(func() {
 				a.accountCard(c)
+				sectionTitle("Echo Connect")
+				a.settingsCard(c, "Echo Connect", m3.IconEchoConnect, func() {
+					a.lanSyncSetting(c)
+				})
 				ui.Row(c).FillWidth().Gap(14).AlignItems(ui.Start).Children(func() {
 					ui.Column(c.Key("bento-left")).Grow(1).Basis(0).MinWidth(0).Gap(12).Children(func() {
 						sectionTitle("Appearance")
@@ -225,10 +229,6 @@ func (a *app) settingsBentoPage(c *ui.Context, sc m3.Scheme) {
 						a.soundCard(c)
 						sectionTitle("System")
 						a.desktopCard(c)
-						sectionTitle("Echo Connect")
-						a.settingsCard(c, "Echo Connect", m3.IconSmartphone, func() {
-							a.lanSyncSetting(c)
-						})
 						sectionTitle("Storage & privacy")
 						a.playbackCacheCard(c)
 						a.privacyCard(c)

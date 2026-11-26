@@ -40,6 +40,7 @@ func (a *app) syncLANSync() {
 	a.lan = mgr
 	a.lanError = ""
 	a.lanPeers = mgr.Peers()
+	a.loadSyncedPlaylists()
 	log.Printf("lansync: started as %q (%s) on port %d", mgr.DeviceName(), mgr.DeviceID(), mgr.Port())
 }
 
@@ -192,6 +193,75 @@ func (h *appLANHandler) OnPeersChanged(peers []lansync.Peer) {
 		h.a.lanPeers = peers
 		h.a.refresh()
 	})
+}
+
+func (h *appLANHandler) OnPairStart(req lansync.PairStartPayload) {
+	h.a.update(func() {
+		peer := lansync.Peer{
+			ID:       req.DeviceID,
+			Name:     req.DeviceName,
+			Platform: req.Platform,
+			Host:     req.Host,
+			Port:     req.Port,
+		}
+		for _, p := range h.a.lanPeers {
+			if p.ID == req.DeviceID {
+				peer = p
+				break
+			}
+		}
+		exp := time.Now().Add(60 * time.Second)
+		if req.ExpiresAtMs > 0 {
+			exp = time.UnixMilli(req.ExpiresAtMs)
+		}
+		h.a.pairDialog = &pairDialogState{
+			open:      true,
+			peer:      peer,
+			expiresAt: exp,
+		}
+		if h.a.desktop != nil {
+			h.a.desktop.bringToFront()
+		}
+		h.a.refresh()
+	})
+}
+
+func (h *appLANHandler) OnPairVerify(req lansync.PairVerifyRequest) lansync.PairVerifyResponse {
+	var resp lansync.PairVerifyResponse
+	h.a.callMain(func() {
+		resp = h.a.handleDesktopPairVerify(req)
+	})
+	return resp
+}
+
+func (h *appLANHandler) OnUnpair(deviceID string) {
+	h.a.update(func() {
+		if h.a.settings.PairedPeerID == "" || h.a.settings.PairedPeerID == deviceID {
+			h.a.settings.PairedPeerID = ""
+			h.a.settings.PairedPeerName = ""
+			h.a.settings.PairToken = ""
+			h.a.saveSettings()
+			h.a.appendSyncLog("Unpaired by remote device")
+			h.a.refresh()
+		}
+	})
+}
+
+func (h *appLANHandler) BuildSyncBundle() lansync.SyncBundle {
+	var b lansync.SyncBundle
+	h.a.callMain(func() {
+		b = h.a.buildLocalSyncBundle()
+	})
+	return b
+}
+
+func (h *appLANHandler) ApplySyncBundle(bundle lansync.SyncBundle) lansync.SyncBundle {
+	var reply lansync.SyncBundle
+	h.a.callMain(func() {
+		h.a.applyIncomingSyncBundle(bundle)
+		reply = h.a.buildLocalSyncBundle()
+	})
+	return reply
 }
 
 func (a *app) buildLANPeerState() lansync.PeerState {
@@ -639,24 +709,28 @@ func (a *app) lanSyncSetting(c *ui.Context) {
 					for _, peer := range a.lanPeers {
 						p := peer
 						isLive := a.lanActivePeerID == p.ID
+						isPaired := a.settings.PairedPeerID == p.ID
 						st, hasState := a.lanRemoteStates[p.ID]
 						peerIcon := m3.IconComputer
 						if p.Platform == "android" {
 							peerIcon = m3.IconSmartphone
 						}
 						card := ui.Column(c.Key("lan-peer-"+p.ID)).Gap(10).Padding(12).Radius(m3.Medium).Background(sc.SurfaceContainer)
-						if isLive {
+						if isLive || isPaired {
 							card.Border(1, sc.Primary.Alpha(0.5))
 						}
 						card.Children(func() {
 							ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 								iconColor := sc.OnSurfaceVariant
-								if isLive {
+								if isLive || isPaired {
 									iconColor = sc.Primary
 								}
 								ui.Icon(c, peerIcon).FontSize(22).TextColor(iconColor).Shrink(0)
 								ui.Column(c).Grow(1).Gap(2).Children(func() {
 									title := p.Name
+									if isPaired {
+										title += " · Paired"
+									}
 									if isLive {
 										title += " · Active"
 									}
@@ -669,31 +743,62 @@ func (a *app) lanSyncSetting(c *ui.Context) {
 								})
 							})
 							ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-								if isLive {
-									if m3.Button(c, m3.ButtonSpec{Label: "Move here", Kind: m3.Tonal, Key: "lan-pull-" + p.ID}).Clicked() {
-										a.pullHandoffFromPeer(p)
+								if isPaired {
+									syncLabel := "Force Sync"
+									if a.lanSyncBusy {
+										syncLabel = "Syncing..."
 									}
-									if m3.Button(c, m3.ButtonSpec{Label: "Disconnect", Kind: m3.Outlined, Key: "lan-disc-" + p.ID}).Clicked() {
-										a.disconnectLANController()
+									if m3.Button(c, m3.ButtonSpec{Label: syncLabel, Kind: m3.Tonal, Disabled: a.lanSyncBusy, Key: "lan-sync-" + p.ID}).Clicked() {
+										a.forceSyncWithPeer(p)
 									}
-								} else {
-									if a.current.VideoID != "" {
-										if m3.Button(c, m3.ButtonSpec{Label: "Play on " + p.Name, Kind: m3.Tonal, Key: "lan-send-" + p.ID}).Clicked() {
-											a.sendHandoffToPeer(p)
-										}
-									} else {
-										if m3.Button(c, m3.ButtonSpec{Label: "Control", Kind: m3.Tonal, Key: "lan-ctrl-" + p.ID}).Clicked() {
-											a.attachLANController(p)
-										}
-									}
-									if hasState && st.Current != nil && st.Current.Title != "" {
-										if m3.Button(c, m3.ButtonSpec{Label: "Move here", Kind: m3.Outlined, Key: "lan-pull-" + p.ID}).Clicked() {
+									if isLive {
+										if m3.Button(c, m3.ButtonSpec{Label: "Move here", Kind: m3.Tonal, Key: "lan-pull-" + p.ID}).Clicked() {
 											a.pullHandoffFromPeer(p)
 										}
+										if m3.Button(c, m3.ButtonSpec{Label: "Disconnect", Kind: m3.Outlined, Key: "lan-disc-" + p.ID}).Clicked() {
+											a.disconnectLANController()
+										}
+									} else {
+										if a.current.VideoID != "" {
+											if m3.Button(c, m3.ButtonSpec{Label: "Play on " + p.Name, Kind: m3.Outlined, Key: "lan-send-" + p.ID}).Clicked() {
+												a.sendHandoffToPeer(p)
+											}
+										} else {
+											if m3.Button(c, m3.ButtonSpec{Label: "Control", Kind: m3.Outlined, Key: "lan-ctrl-" + p.ID}).Clicked() {
+												a.attachLANController(p)
+											}
+										}
+										if hasState && st.Current != nil && st.Current.Title != "" {
+											if m3.Button(c, m3.ButtonSpec{Label: "Move here", Kind: m3.Outlined, Key: "lan-pull-" + p.ID}).Clicked() {
+												a.pullHandoffFromPeer(p)
+											}
+										}
+									}
+									if m3.Button(c, m3.ButtonSpec{Label: "Unpair", Kind: m3.TextOnly, Key: "lan-unpair-" + p.ID}).Clicked() {
+										a.unpairPeer(p)
+									}
+								} else {
+									if m3.Button(c, m3.ButtonSpec{Label: "Pair", Kind: m3.Tonal, Key: "lan-pair-" + p.ID}).Clicked() {
+										a.startDesktopPairing(p)
 									}
 								}
 							})
 						})
+					}
+				})
+			}
+			if !a.lanLastSyncAt.IsZero() || len(a.lanSyncLogs) > 0 {
+				ui.Column(c.Key("lan-sync-history")).Gap(4).Padding(10).Radius(m3.Medium).Background(sc.SurfaceContainerLow).Children(func() {
+					header := "Sync Activity"
+					if !a.lanLastSyncAt.IsZero() {
+						header += " · Last: " + a.lanLastSyncAt.Format("15:04:05")
+					}
+					m3.Text(c, m3.LabelMedium, header).TextColor(sc.OnSurface).FontWeight(500)
+					for i, entry := range a.lanSyncLogs {
+						if i >= 6 {
+							break
+						}
+						m3.Text(c.Key(fmt.Sprintf("sync-log-%d", i)), m3.BodySmall, entry).TextColor(sc.OnSurfaceVariant)
 					}
 				})
 			}

@@ -72,6 +72,9 @@ type Settings struct {
 	LANSync            *bool             `json:"lanSync,omitempty"`
 	DeviceID           string            `json:"deviceId,omitempty"`
 	DeviceName         string            `json:"deviceName,omitempty"`
+	PairedPeerID       string            `json:"pairedPeerId,omitempty"`
+	PairedPeerName     string            `json:"pairedPeerName,omitempty"`
+	PairToken          string            `json:"pairToken,omitempty"`
 }
 
 type TrayMark string
