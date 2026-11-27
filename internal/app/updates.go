@@ -33,7 +33,7 @@ func currentAppVersion() string {
 	if v := strings.TrimSpace(mygo.App.Version()); v != "" {
 		return v
 	}
-	return "1.0.0"
+	return "1.0.1"
 }
 
 func (a *app) autoCheckUpdatesOn() bool {

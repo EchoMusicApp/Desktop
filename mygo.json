@@ -1,14 +1,14 @@
 {
   "name": "Echo Music",
   "identifier": "echo.music.iad1tya",
-  "version": "1.0.0",
-  "versionCode": 100,
+  "version": "1.0.1",
+  "versionCode": 101,
   "out": "build",
   "urlSchemes": ["echomusic", "echo"],
   "macos": {
     "infoPlist": {
-      "CFBundleVersion": "100",
-      "CFBundleShortVersionString": "1.0.0"
+      "CFBundleVersion": "101",
+      "CFBundleShortVersionString": "1.0.1"
     }
   },
   "updates": {
