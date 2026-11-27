@@ -19,8 +19,12 @@ bass, other and vocals. The feature is off by default; enable it under
 
 ## Controls
 
-- The full-screen player shows coloured `DRM`, `BAS`, `OTH` and `VOC` chips;
-  tap one to toggle that stem.
+- Open the player in full screen. If stems are off, press **Enable stems**; if
+  the current track has not been separated yet, press **Separate this track**
+  (model setup happens on first use). Once it completes, the coloured `DRM`,
+  `BAS`, `OTH` and `VOC` chips appear and the song plays from its stems.
+  Playlists also offer **Separate all tracks**.
+- Tap a chip to toggle that stem.
 - Hold `D`, `B`, `I` or `V` for a quarter second to mute that stem while the
   key is held; releasing it restores the previous mix. A quick tap toggles.
 - The **Separate all tracks** button on a playlist separates every track that

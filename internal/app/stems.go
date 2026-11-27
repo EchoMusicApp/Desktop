@@ -206,6 +206,38 @@ func (a *app) separateAll() {
 	})
 }
 
+// separateCurrent separates the song currently playing, so stems become
+// available without having to open a playlist first.
+func (a *app) separateCurrent() {
+	if a.stems == nil || a.stemsTask.busy() || a.current.VideoID == "" {
+		return
+	}
+	item := a.current
+	a.notice = "Separating stems for " + item.Title + "…"
+	a.stemsStatus = a.notice
+	startTask(a, &a.stemsTask, noTimeout, func(ctx context.Context) (stems.BatchResult, error) {
+		source, err := a.downloadForStems(ctx, item)
+		if err != nil {
+			return stems.BatchResult{}, err
+		}
+		if err := a.stems.Separate(ctx, item.VideoID, source); err != nil {
+			return stems.BatchResult{}, err
+		}
+		return stems.BatchResult{Separated: 1}, nil
+	}, func(result stems.BatchResult, err error) {
+		if err != nil {
+			a.stemsStatus = "Stem separation failed: " + err.Error()
+			a.notice = a.stemsStatus
+			a.noticeHelp = true
+			return
+		}
+		a.stemsStatus = "Stems ready for " + item.Title
+		a.notice = a.stemsStatus
+		a.noticeHelp = false
+		a.applyStems()
+	})
+}
+
 func (a *app) downloadForStems(ctx context.Context, item youtube.MusicItem) (string, error) {
 	if local := a.downloaded(item.VideoID); local != "" {
 		return local, nil
