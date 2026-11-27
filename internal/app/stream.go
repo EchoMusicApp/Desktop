@@ -164,6 +164,9 @@ func (a *app) audioStarted(item youtube.MusicItem, found resolvedAudio, position
 		cache.Add(item.VideoID, found.url)
 	}
 	a.warmNext()
+	if a.settings.VideoCanvas {
+		a.run(func() { a.loadCanvas(item) })
+	}
 }
 
 const preloadLead = 20 * time.Second

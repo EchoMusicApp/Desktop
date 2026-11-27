@@ -260,6 +260,7 @@ func (a *app) openAudioCache() {
 	}
 	a.cacheDirectoryText = canonical
 	a.initStems(root)
+	a.initCanvas(root)
 	a.replaceAudioCache(cache)
 }
 

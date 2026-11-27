@@ -247,6 +247,19 @@ func (a *app) stemsCard(c *ui.Context) {
 					a.setStems(on)
 				}
 			})
+			ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+				on := a.settings.VideoCanvas
+				if m3.Switch(c, &on, "Video canvas behind the full-screen player").Changed() {
+					a.settings.VideoCanvas = on
+					a.saveSettings()
+					if !on {
+						a.canvasPlayer = nil
+					} else if a.current.VideoID != "" {
+						a.run(func() { a.loadCanvas(a.current) })
+					}
+				}
+				settingLabel(c, "Video canvas (beta)", "Loop a muted five-second clip from the song's video behind the full-screen player. Cached locally; depends on the codecs installed with the app.").Grow(1)
+			})
 			settingLabel(c, "Separation speed", "Fast uses a 10% overlap; Quality uses 25% and takes longer.")
 			ui.Row(c).Gap(8).Wrap().Children(func() {
 				for _, option := range []struct {

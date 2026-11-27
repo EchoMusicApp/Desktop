@@ -13,6 +13,7 @@ import (
 
 	"github.com/EchoMusicApp/Echo-Music/internal/artwork"
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
+	"github.com/EchoMusicApp/Echo-Music/internal/canvas"
 	"github.com/EchoMusicApp/Echo-Music/internal/cookies"
 	"github.com/EchoMusicApp/Echo-Music/internal/discordrpc"
 	"github.com/EchoMusicApp/Echo-Music/internal/ga4"
@@ -78,6 +79,11 @@ type app struct {
 	stemsHoldSaved  [4]bool
 	stemsTask       task
 	stemsStatus     string
+
+	// Opt-in video backdrop for the full-screen player (beta).
+	canvas       *canvas.Service
+	canvasPlayer *ui.VideoPlayer
+	canvasID     string
 
 	run           func(work func())
 	sleep         func(ctx context.Context, delay time.Duration) error
