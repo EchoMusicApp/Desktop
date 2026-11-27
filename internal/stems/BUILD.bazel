@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "stems",
+    srcs = [
+        "separate.py",
+        "stems.go",
+        "wav.go",
+    ],
+    importpath = "github.com/EchoMusicApp/Echo-Music/internal/stems",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/proc"],
+)
+
+go_test(
+    name = "stems_test",
+    srcs = ["stems_test.go"],
+    embed = [":stems"],
+)

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
-	"github.com/EchoMusicApp/Echo-Music/internal/ytdlp"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+	"github.com/EchoMusicApp/Echo-Music/internal/ytdlp"
 )
 
 func resolveAudio(client *youtube.Client, auth *audioAuth, traces *resolveTraces) audio.Resolver {
@@ -116,7 +116,11 @@ func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed
 		if accountProgress && item.IsEpisode() {
 			startAt = max(startAt, episodeProgressPosition(item, found.total))
 		}
-		found.playErr = a.player.PlayAtContext(ctx, found.url, startAt, false)
+		playURL := found.url
+		if mix := a.stemPlaybackPath(item); mix != "" {
+			playURL = mix
+		}
+		found.playErr = a.player.PlayAtContext(ctx, playURL, startAt, false)
 		return found, nil
 	}, func(found resolvedAudio, err error) {
 		if found.loudnessOK {

@@ -22,11 +22,11 @@ import (
 	"github.com/EchoMusicApp/Echo-Music/internal/diskcache"
 	"github.com/EchoMusicApp/Echo-Music/internal/mcpcontrol"
 	"github.com/EchoMusicApp/Echo-Music/internal/memprof"
+	"github.com/EchoMusicApp/Echo-Music/internal/player"
 	"github.com/EchoMusicApp/Echo-Music/internal/proc"
 	"github.com/EchoMusicApp/Echo-Music/internal/report"
 	"github.com/EchoMusicApp/Echo-Music/internal/secretfile"
 	"github.com/EchoMusicApp/Echo-Music/internal/settings"
-	"github.com/EchoMusicApp/Echo-Music/internal/player"
 	"github.com/EchoMusicApp/Echo-Music/internal/systemmedia"
 )
 
@@ -259,6 +259,7 @@ func (a *app) openAudioCache() {
 		return
 	}
 	a.cacheDirectoryText = canonical
+	a.initStems(root)
 	a.replaceAudioCache(cache)
 }
 

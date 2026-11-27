@@ -13,9 +13,9 @@ import (
 
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
 	"github.com/EchoMusicApp/Echo-Music/internal/keymap"
-	"github.com/EchoMusicApp/Echo-Music/internal/settings"
 	"github.com/EchoMusicApp/Echo-Music/internal/m3"
 	"github.com/EchoMusicApp/Echo-Music/internal/player"
+	"github.com/EchoMusicApp/Echo-Music/internal/settings"
 )
 
 var swatches = []struct{ name, hex string }{
@@ -239,6 +239,7 @@ var settingsCategories = []settingsCategory{
 		render: func(a *app, c *ui.Context) {
 			a.playbackCard(c)
 			a.soundCard(c)
+			a.stemsCard(c)
 			a.crossfadeCard(c)
 			a.aiFilterCard(c)
 		},

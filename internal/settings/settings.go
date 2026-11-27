@@ -62,6 +62,10 @@ type Settings struct {
 	EQBands            []float64         `json:"eqBands,omitempty"`
 	Crossfade          bool              `json:"crossfade,omitempty"`
 	CrossfadeSeconds   int               `json:"crossfadeSeconds,omitempty"`
+	Stems              bool              `json:"stems,omitempty"`
+	StemsFast          bool              `json:"stemsFast,omitempty"`
+	StemsProvider      string            `json:"stemsProvider,omitempty"`
+	StemsDirectory     string            `json:"stemsDirectory,omitempty"`
 	PodcastSpeed       float64           `json:"podcastSpeed,omitempty"`
 	MusicSpeed         float64           `json:"musicSpeed,omitempty"`
 	UsagePing          *bool             `json:"usagePing,omitempty"`
@@ -88,6 +92,7 @@ func Defaults() Settings {
 	return Settings{
 		Seed: "#6750a4", Mode: "system", Dynamic: true, Style: int(m3.Gradient), Volume: 70, AutoPlay: true, CacheSongs: audio.DefaultLimit, NotifyTrack: runtime.GOOS != "darwin", ShowTray: runtime.GOOS != "darwin", TrayMark: TrayMarkWordmark,
 		Zoom: DefaultZoom, ShowNotch: true, CrossfadeSeconds: DefaultCrossfade, WavyProgress: true,
+		StemsFast: true, StemsProvider: "auto",
 	}
 }
 

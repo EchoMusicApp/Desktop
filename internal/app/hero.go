@@ -3,9 +3,9 @@ package app
 import (
 	"strings"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/EchoMusicApp/Echo-Music/internal/m3"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) detailWash(sc m3.Scheme) ui.Color {
@@ -78,6 +78,9 @@ func (a *app) hero(c *ui.Context) {
 				}
 				if r.target != youtube.TargetPodcast && m3.Button(c, m3.ButtonSpec{Label: "Shuffle", Icon: m3.IconShuffle, Kind: m3.Tonal, Size: buttons, Disabled: none, Key: "hero-shuffle"}).Clicked() {
 					a.shufflePage()
+				}
+				if a.settings.Stems && a.stems != nil && r.target != youtube.TargetPodcast && len(a.page.playable) > 0 && m3.Button(c, m3.ButtonSpec{Label: "Separate all tracks", Icon: m3.IconDownloadDone, Kind: m3.Tonal, Size: buttons, Key: "hero-separate-stems"}).Clicked() {
+					a.separateAll()
 				}
 				a.libraryButton(c)
 				a.downloadButton(c)

@@ -61,6 +61,7 @@ func (a *app) shortcuts(c *ui.Context) {
 	if a.keyboard.recording != "" {
 		return
 	}
+	a.stemHoldKeys(c)
 	keys := a.keyMap()
 	for _, info := range keymap.Actions {
 		playerNotOpen := info.Action == keymap.ClosePlayer && !a.nowPlaying.open

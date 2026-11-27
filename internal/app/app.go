@@ -15,22 +15,23 @@ import (
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
 	"github.com/EchoMusicApp/Echo-Music/internal/cookies"
 	"github.com/EchoMusicApp/Echo-Music/internal/discordrpc"
+	"github.com/EchoMusicApp/Echo-Music/internal/ga4"
 	"github.com/EchoMusicApp/Echo-Music/internal/history"
 	"github.com/EchoMusicApp/Echo-Music/internal/lansync"
 	"github.com/EchoMusicApp/Echo-Music/internal/lru"
 	"github.com/EchoMusicApp/Echo-Music/internal/lyrics"
+	"github.com/EchoMusicApp/Echo-Music/internal/m3"
 	"github.com/EchoMusicApp/Echo-Music/internal/mcpcontrol"
+	"github.com/EchoMusicApp/Echo-Music/internal/player"
 	"github.com/EchoMusicApp/Echo-Music/internal/posthog"
 	"github.com/EchoMusicApp/Echo-Music/internal/proc"
 	"github.com/EchoMusicApp/Echo-Music/internal/report"
 	"github.com/EchoMusicApp/Echo-Music/internal/sentry"
 	"github.com/EchoMusicApp/Echo-Music/internal/settings"
-	"github.com/EchoMusicApp/Echo-Music/internal/ytdlp"
-	"github.com/EchoMusicApp/Echo-Music/internal/ga4"
-	"github.com/EchoMusicApp/Echo-Music/internal/m3"
-	"github.com/EchoMusicApp/Echo-Music/internal/player"
+	"github.com/EchoMusicApp/Echo-Music/internal/stems"
 	"github.com/EchoMusicApp/Echo-Music/internal/systemmedia"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+	"github.com/EchoMusicApp/Echo-Music/internal/ytdlp"
 )
 
 type app struct {
@@ -44,22 +45,22 @@ type app struct {
 	mcpLastAt                            time.Time
 	mcpLastFailed                        bool
 
-	lan              *lansync.Manager
-	lanPeers         []lansync.Peer
-	lanRemoteStates  map[string]lansync.PeerState
-	lanActivePeerID  string
-	lanSuppressUntil time.Time
-	lanError         string
-	lanStatus        string
-	pairDialog       *pairDialogState
-	hostPair         *hostPairState
+	lan                  *lansync.Manager
+	lanPeers             []lansync.Peer
+	lanRemoteStates      map[string]lansync.PeerState
+	lanActivePeerID      string
+	lanSuppressUntil     time.Time
+	lanError             string
+	lanStatus            string
+	pairDialog           *pairDialogState
+	hostPair             *hostPairState
 	settingsTab          int
 	settingsRailExpanded bool
 	settingsScrolls      [8]ui.ScrollState
-	syncedPlaylists  []lansync.PlaylistSyncDTO
-	lanSyncLogs      []string
-	lanLastSyncAt    time.Time
-	lanSyncBusy      bool
+	syncedPlaylists      []lansync.PlaylistSyncDTO
+	lanSyncLogs          []string
+	lanLastSyncAt        time.Time
+	lanSyncBusy          bool
 
 	desktop      *desktop
 	router       *ui.Router
@@ -68,6 +69,15 @@ type app struct {
 	discord      *discordrpc.Session
 	thumbs       *artwork.Cache
 	displayScale float32
+
+	// Offline stem separation (opt-in beta).
+	stems           *stems.Service
+	stemsMask       [4]bool
+	stemHold        [4]time.Time
+	stemsHoldActive [4]bool
+	stemsHoldSaved  [4]bool
+	stemsTask       task
+	stemsStatus     string
 
 	run           func(work func())
 	sleep         func(ctx context.Context, delay time.Duration) error
@@ -211,6 +221,7 @@ func newApp() *app {
 		statsRangeDays: 14,
 		swipeMods:      ui.Shift,
 		keyboard:       keyboardState{hintDelay: hintDelay},
+		stemsMask:      [4]bool{true, true, true, true},
 	}
 	a.notifications = mygo.NotificationsSupported
 	a.scrobble = newScrobbler()

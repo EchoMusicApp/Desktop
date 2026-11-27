@@ -219,6 +219,7 @@ func (a *app) fullScreenView(c *ui.Context) {
 			ui.Column(c).AlignItems(ui.Center).Gap(4).MaxWidth(640).Children(func() {
 				m3.EmphasizedText(c, m3.HeadlineSmall, a.current.Title).TextColor(ui.RGB(255, 255, 255)).TextAlign(ui.Center).MaxLines(2)
 				m3.Text(c, m3.BodyLarge, shownArtist(a.current)).TextColor(ui.RGB(255, 255, 255).Alpha(0.72)).TextAlign(ui.Center).SingleLine()
+				a.stemChips(c)
 			})
 		})
 	})
