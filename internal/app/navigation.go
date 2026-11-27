@@ -357,6 +357,9 @@ func (a *app) applyPage(p *pageData, r *route, path string, client *youtube.Clie
 		p.feed.more = ""
 	}
 	p.loadedAt = time.Now()
+	if r.id == routePodcasts {
+		a.hydrateEpisodes()
+	}
 	if !partial && r.id == routeLibrary {
 		a.knownPlaylists = knownPlaylists{client: client, items: libraryPlaylists(result)}
 	}
@@ -493,20 +496,18 @@ func (a *app) activateAt(item youtube.MusicItem, tracks []youtube.MusicItem, ind
 		if item.VideoID == "" && item.Title != "" {
 			query := strings.TrimSpace(item.Title + " " + item.Artist)
 			client := a.client()
+			targetItem := item
 			spawn(a, func() *youtube.MusicItem {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				res, err := client.Search(ctx, query, youtube.SearchOptions{})
+				res, err := client.Search(ctx, query, youtube.SearchOptions{Params: youtube.SearchSongsParams})
+				if err != nil || res == nil || len(res.Items) == 0 {
+					res, err = client.Search(ctx, query, youtube.SearchOptions{})
+				}
 				if err != nil || res == nil {
 					return nil
 				}
-				for _, it := range res.Items {
-					if it.VideoID != "" {
-						cp := it
-						return &cp
-					}
-				}
-				return nil
+				return pickStrictTrackMatch(targetItem, res.Items)
 			}, func(found *youtube.MusicItem) {
 				if found != nil {
 					a.play(*found, []youtube.MusicItem{*found})
@@ -514,6 +515,111 @@ func (a *app) activateAt(item youtube.MusicItem, tracks []youtube.MusicItem, ind
 			})
 		}
 	}
+}
+
+func normalizeMatchText(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	b.Grow(len(s))
+	space := false
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			space = false
+		} else if !space {
+			b.WriteByte(' ')
+			space = true
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func stripParenSuffix(s string) string {
+	for _, sep := range []string{"(", "["} {
+		if i := strings.Index(s, sep); i > 0 {
+			s = s[:i]
+		}
+	}
+	return normalizeMatchText(s)
+}
+
+func pickStrictTrackMatch(target youtube.MusicItem, candidates []youtube.MusicItem) *youtube.MusicItem {
+	targetTitle := normalizeMatchText(target.Title)
+	targetBase := stripParenSuffix(target.Title)
+	targetArtist := normalizeMatchText(target.Artist)
+	targetDur := parseDurationLabel(target.Duration)
+
+	unwanted := []string{"remix", "lofi", "lo fi", "slowed", "reverb", "cover", "karaoke", "instrumental", "8d", "nightcore", "mashup"}
+
+	var best *youtube.MusicItem
+	bestScore := -10000
+	for i := range candidates {
+		it := candidates[i]
+		if it.VideoID == "" {
+			continue
+		}
+		score := 0
+		if it.IsTrack() {
+			score += 25
+		}
+		candTitle := normalizeMatchText(it.Title)
+		candBase := stripParenSuffix(it.Title)
+		switch {
+		case candTitle == targetTitle:
+			score += 120
+		case targetBase != "" && candBase == targetBase:
+			score += 95
+		case targetTitle != "" && strings.Contains(candTitle, targetTitle):
+			score += 65
+		case targetBase != "" && strings.Contains(candBase, targetBase):
+			score += 45
+		default:
+			score -= 60
+		}
+
+		for _, kw := range unwanted {
+			if strings.Contains(candTitle, kw) && !strings.Contains(targetTitle, kw) {
+				score -= 90
+			}
+		}
+
+		if targetArtist != "" {
+			candArtist := normalizeMatchText(it.Artist + " " + it.Artists + " " + it.Subtitle)
+			firstArtist := strings.Fields(targetArtist)
+			switch {
+			case strings.Contains(candArtist, targetArtist):
+				score += 70
+			case len(firstArtist) > 0 && strings.Contains(candArtist, firstArtist[0]):
+				score += 35
+			default:
+				score -= 40
+			}
+		}
+
+		if targetDur > 0 && it.Duration != "" {
+			if candDur := parseDurationLabel(it.Duration); candDur > 0 {
+				diff := targetDur - candDur
+				if diff < 0 {
+					diff = -diff
+				}
+				switch {
+				case diff <= 3*time.Second:
+					score += 45
+				case diff <= 8*time.Second:
+					score += 20
+				case diff > 25*time.Second:
+					score -= 70
+				}
+			}
+		}
+
+		if best == nil || score > bestScore {
+			cp := it
+			best = &cp
+			bestScore = score
+		}
+	}
+	return best
 }
 
 func indexOf(tracks []youtube.MusicItem, videoID string) int {

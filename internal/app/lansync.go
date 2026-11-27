@@ -316,19 +316,48 @@ func (a *app) localEpisodesDTO() []lansync.EpisodeDTO {
 		out = append(out, lansync.EpisodeDTO{
 			VideoID:    ep.VideoID,
 			PositionMs: ep.Position.Milliseconds(),
+			DurationMs: ep.Duration.Milliseconds(),
+			Title:      ep.Title,
+			Show:       ep.Show,
+			Thumbnail:  ep.Thumbnail,
 		})
 	}
 	return out
 }
 
 func (a *app) mergeEpisodesFromLAN(remote []lansync.EpisodeDTO) []lansync.EpisodeDTO {
+	existingByID := make(map[string]playstate.Episode, len(a.episodes))
+	for _, ep := range a.episodes {
+		existingByID[ep.VideoID] = ep
+	}
 	merged := lansync.MergeEpisodeLists(a.localEpisodesDTO(), remote)
 	next := make([]playstate.Episode, 0, len(merged))
 	for _, ep := range merged {
 		if ep.VideoID != "" && ep.PositionMs > 0 && !ep.Finished && len(next) < playstate.MaxEpisodes {
+			prev := existingByID[ep.VideoID]
+			title := ep.Title
+			if title == "" {
+				title = prev.Title
+			}
+			show := ep.Show
+			if show == "" {
+				show = prev.Show
+			}
+			thumb := ep.Thumbnail
+			if thumb == "" {
+				thumb = prev.Thumbnail
+			}
+			dur := time.Duration(ep.DurationMs) * time.Millisecond
+			if dur <= 0 {
+				dur = prev.Duration
+			}
 			next = append(next, playstate.Episode{
-				VideoID:  ep.VideoID,
-				Position: time.Duration(ep.PositionMs) * time.Millisecond,
+				VideoID:   ep.VideoID,
+				Position:  time.Duration(ep.PositionMs) * time.Millisecond,
+				Duration:  dur,
+				Title:     title,
+				Show:      show,
+				Thumbnail: thumb,
 			})
 		}
 	}
@@ -338,6 +367,10 @@ func (a *app) mergeEpisodesFromLAN(remote []lansync.EpisodeDTO) []lansync.Episod
 		state.Episodes = a.episodes
 		a.playSave.writer.Save(state)
 	}
+	if a.page != nil {
+		a.page.rowsDirty = true
+	}
+	a.hydrateEpisodes()
 	return merged
 }
 

@@ -29,6 +29,9 @@ func (a *app) pullScroll(ev ui.InputEvent) bool {
 	if ev.Kind != ui.InputScroll || ev.DY == 0 || ev.Mods&ui.Shift != 0 || ev.Momentum || !a.pullable() {
 		return false
 	}
+	if math.Abs(float64(ev.DX)) > math.Abs(float64(ev.DY)) {
+		return false
+	}
 	p := &a.pull
 	if ev.DY > 0 && p.distance == 0 {
 		return false

@@ -29,8 +29,12 @@ type State struct {
 }
 
 type Episode struct {
-	VideoID  string        `json:"videoId"`
-	Position time.Duration `json:"position"`
+	VideoID   string        `json:"videoId"`
+	Position  time.Duration `json:"position"`
+	Duration  time.Duration `json:"duration,omitempty"`
+	Title     string        `json:"title,omitempty"`
+	Show      string        `json:"show,omitempty"`
+	Thumbnail string        `json:"thumbnail,omitempty"`
 }
 
 func (s *State) Empty() bool { return len(s.Items) == 0 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/playstate"
@@ -202,7 +203,21 @@ func (a *app) leaveEpisode() {
 	if position < episodeStartGuard || (a.total > 0 && position > a.total-episodeEndGuard) {
 		return
 	}
-	a.episodes = slices.Insert(a.episodes, 0, playstate.Episode{VideoID: item.VideoID, Position: position})
+	show := item.Artist
+	if show == "" {
+		show = item.Subtitle
+	}
+	a.episodes = slices.Insert(a.episodes, 0, playstate.Episode{
+		VideoID:   item.VideoID,
+		Position:  position,
+		Duration:  a.total,
+		Title:     item.Title,
+		Show:      show,
+		Thumbnail: item.Thumbnail,
+	})
+	if a.page != nil {
+		a.page.rowsDirty = true
+	}
 	a.episodes = a.episodes[:min(len(a.episodes), playstate.MaxEpisodes)]
 }
 
@@ -213,5 +228,112 @@ func (a *app) takeEpisode(videoID string) time.Duration {
 	}
 	position := a.episodes[i].Position
 	a.episodes = slices.Delete(a.episodes, i, i+1)
+	if a.page != nil {
+		a.page.rowsDirty = true
+	}
 	return position
+}
+
+func (a *app) hydrateEpisodes() {
+	if len(a.episodes) == 0 {
+		return
+	}
+	if a.episodesHydrated == nil {
+		a.episodesHydrated = make(map[string]bool)
+	}
+	var missing []string
+	for _, ep := range a.episodes {
+		if ep.VideoID == "" || ep.Position <= 0 {
+			continue
+		}
+		if (ep.Title == "" || ep.Thumbnail == "") && !a.episodesHydrated[ep.VideoID] {
+			a.episodesHydrated[ep.VideoID] = true
+			missing = append(missing, ep.VideoID)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	client := a.client()
+	spawn(a, func() []youtube.MusicItem {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var out []youtube.MusicItem
+		for start := 0; start < len(missing); start += 25 {
+			end := min(start+25, len(missing))
+			items, err := client.GetQueue(ctx, missing[start:end])
+			if err != nil {
+				continue
+			}
+			out = append(out, items...)
+		}
+		return out
+	}, func(items []youtube.MusicItem) {
+		if len(items) == 0 {
+			return
+		}
+		byID := make(map[string]youtube.MusicItem, len(items))
+		for _, it := range items {
+			if it.VideoID != "" {
+				byID[it.VideoID] = it
+			}
+		}
+		changed := false
+		for i := range a.episodes {
+			ep := &a.episodes[i]
+			it, ok := byID[ep.VideoID]
+			if !ok {
+				continue
+			}
+			if ep.Title == "" && it.Title != "" {
+				ep.Title = it.Title
+				changed = true
+			}
+			if ep.Show == "" {
+				show := it.Artist
+				if show == "" {
+					show = it.Subtitle
+				}
+				if show != "" {
+					ep.Show = show
+					changed = true
+				}
+			}
+			if ep.Thumbnail == "" && it.Thumbnail != "" {
+				ep.Thumbnail = it.Thumbnail
+				changed = true
+			}
+			if ep.Duration <= 0 && it.Duration != "" {
+				if d := parseDurationLabel(it.Duration); d > 0 {
+					ep.Duration = d
+					changed = true
+				}
+			}
+		}
+		if changed {
+			if a.playSave.writer.Path != "" {
+				state := a.queue.state(a.playbackPosition())
+				state.Episodes = a.episodes
+				a.playSave.writer.Save(state)
+			}
+			if a.page != nil {
+				a.page.rowsDirty = true
+			}
+		}
+	})
+}
+
+func parseDurationLabel(s string) time.Duration {
+	var total int64
+	for part := range strings.SplitSeq(strings.TrimSpace(s), ":") {
+		var n int64
+		for _, ch := range part {
+			if ch < '0' || ch > '9' {
+				return 0
+			}
+			n = n*10 + int64(ch-'0')
+		}
+		total = total*60 + n
+	}
+	return time.Duration(total) * time.Second
 }

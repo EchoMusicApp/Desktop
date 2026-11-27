@@ -52,6 +52,18 @@ func (c *Client) GetUpNext(ctx context.Context, options UpNextOptions) (*BrowseR
 	return upNextResult(decodeResponse(raw)), nil
 }
 
+func (c *Client) GetQueue(ctx context.Context, videoIDs []string) ([]MusicItem, error) {
+	if len(videoIDs) == 0 {
+		return nil, nil
+	}
+	raw, err := c.execute(ctx, "music/get_queue", map[string]any{"videoIds": videoIDs})
+	if err != nil {
+		return nil, err
+	}
+	res := upNextResult(decodeResponse(raw))
+	return res.Items, nil
+}
+
 func upNextResult(root any) *BrowseResult {
 	items, sections, _ := browseParts(root, false)
 	return &BrowseResult{

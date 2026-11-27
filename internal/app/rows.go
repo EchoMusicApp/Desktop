@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/EchoMusicApp/Echo-Music/internal/playstate"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
 )
 
@@ -141,7 +142,7 @@ func (a *app) syncRows() {
 	}
 	if a.page.rows == nil || a.page.rowsDirty || key != a.page.rowsKey {
 		a.page.rowsKey, a.page.rowsDirty = key, false
-		a.page.rows, a.page.playable = buildRows(a.page.rows[:0], a.page.playable[:0], r, s, a.page.detail, key.top, key, a.excludesItem)
+		a.page.rows, a.page.playable = buildRows(a.page.rows[:0], a.page.playable[:0], r, s, a.page.detail, key.top, key, a.excludesItem, a.episodes)
 	}
 }
 
@@ -164,7 +165,7 @@ func shelfShape(sections []youtube.MusicSection) uint64 {
 	return shape
 }
 
-func buildRows(rows []row, playable []youtube.MusicItem, r *route, s *pageState, heading detail, top youtube.MusicItem, key rowsKey, exclude func(youtube.MusicItem) bool) ([]row, []youtube.MusicItem) {
+func buildRows(rows []row, playable []youtube.MusicItem, r *route, s *pageState, heading detail, top youtube.MusicItem, key rowsKey, exclude func(youtube.MusicItem) bool, episodes []playstate.Episode) ([]row, []youtube.MusicItem) {
 	if r.isDetail() {
 		rows = append(rows, row{kind: rowHero, title: heading.title, track: noTrack})
 	}
@@ -213,6 +214,44 @@ func buildRows(rows []row, playable []youtube.MusicItem, r *route, s *pageState,
 	}
 	if r.id == routePlaylist && key.sort.ordered() {
 		sections = sortPlaylistSections(sections, key.sort)
+	}
+	if r.id == routePodcasts && len(episodes) > 0 {
+		continueItems := make([]youtube.MusicItem, 0, len(episodes))
+		for _, ep := range episodes {
+			if ep.VideoID == "" || ep.Position <= 0 {
+				continue
+			}
+			title := ep.Title
+			if title == "" {
+				title = ep.VideoID
+			}
+			pct := 0
+			if ep.Duration > 0 {
+				pct = int((ep.Position * 100) / ep.Duration)
+				if pct < 1 {
+					pct = 1
+				}
+				if pct > 99 {
+					pct = 99
+				}
+			}
+			continueItems = append(continueItems, youtube.MusicItem{
+				ID:              ep.VideoID,
+				VideoID:         ep.VideoID,
+				Title:           title,
+				Artist:          ep.Show,
+				Subtitle:        ep.Show,
+				Thumbnail:       ep.Thumbnail,
+				Kind:            youtube.KindEpisode,
+				ProgressPercent: pct,
+			})
+		}
+		if len(continueItems) > 0 {
+			sections = append([]youtube.MusicSection{{
+				Title: "Continue listening",
+				Items: continueItems,
+			}}, sections...)
+		}
 	}
 	if r.id == routeLibrary {
 		seenLib := make(map[string]struct{})

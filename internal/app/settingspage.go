@@ -872,7 +872,7 @@ func (a *app) chooseAudioCacheDirectory() {
 }
 
 func (a *app) desktopCard(c *ui.Context) {
-	a.settingsCard(c, "Desktop", m3.IconNotifications, func() {
+	a.settingsCard(c, "Desktop", m3.IconComputer, func() {
 		ui.Column(c).Gap(4).Children(func() {
 			if runtime.GOOS == "darwin" {
 				a.notchSetting(c)

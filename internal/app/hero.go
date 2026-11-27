@@ -123,7 +123,7 @@ func (a *app) compactHeader(c *ui.Context, shown float32) {
 	part := func(from float32) float32 { return min(max((shown-from)/0.35, 0), 1) }
 	artIn, titleIn, actionsIn := part(0), part(0.12), part(0.3)
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Shrink(1).MinWidth(0).Children(func() {
-		if d.art != "" && r.target != youtube.TargetPodcast {
+		if d.art != "" && r.target != youtube.TargetPodcast && r.target != youtube.TargetPlaylist {
 			a.artRect(c, d.art, 96, 34, 34, 0).Opacity(artIn).Translate(0, (1-artIn)*6)
 		}
 		titleText := m3.EmphasizedText(c, m3.TitleMedium, d.title).SingleLine().Shrink(1).MinWidth(0).TextColor(sc.OnSurface).

@@ -60,8 +60,9 @@ type playback struct {
 	suspendedWhilePlaying bool
 
 	resumeID        string
-	episodes        []playstate.Episode
-	episodeProgress *episodeProgressSync
+	episodes         []playstate.Episode
+	episodesHydrated map[string]bool
+	episodeProgress  *episodeProgressSync
 }
 
 func (a *app) notificationArtworkNeeded() bool {

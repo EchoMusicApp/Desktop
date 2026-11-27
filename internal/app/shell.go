@@ -296,33 +296,8 @@ func (a *app) topBar(c *ui.Context) {
 	back := r.isDetail()
 	padding := float32(pageGutter - plainHeadingInset)
 	targetHeight := float32(76)
-	if !back {
-		scrollY := float32(0)
-		if a.page != nil && a.page.scroll != nil {
-			scrollY = a.page.scroll.Y
-		}
-		if r.id != a.lastNavRoute {
-			a.lastNavRoute = r.id
-			a.settingsNavHidden = false
-			a.lastSettingsY = scrollY
-		} else if a.page != nil && a.page.scroll != nil {
-			diff := scrollY - a.lastSettingsY
-			if scrollY <= 15 {
-				a.settingsNavHidden = false
-			} else if diff > 6 {
-				a.settingsNavHidden = true
-			} else if diff < -6 {
-				a.settingsNavHidden = false
-			}
-			a.lastSettingsY = scrollY
-		}
-		if a.settingsNavHidden {
-			targetHeight = 0
-		}
-	} else {
-		a.lastNavRoute = r.id
-		a.settingsNavHidden = false
-	}
+	a.lastNavRoute = r.id
+	a.settingsNavHidden = false
 	topbar := ui.Row(c.Key("topbar")).PaddingX(padding).Gap(16).AlignItems(ui.Center).Shrink(0).DragWindow().Clip()
 	navH := m3.Animate(topbar, "nav-height", targetHeight, m3.EffectsDefault)
 	topbar.Height(navH)

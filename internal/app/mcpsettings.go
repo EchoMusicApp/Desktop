@@ -113,12 +113,14 @@ func (a *app) mcpSetup(c *ui.Context) {
 	if a.mcpAdvanced {
 		config := launch.config()
 		m3.Text(c, m3.BodySmall, "Add echomusic as a local stdio server in your client's MCP settings.").TextColor(sc.OnSurfaceVariant)
-		if m3.Button(c, m3.ButtonSpec{Label: "Copy JSON config", Icon: m3.IconCopy, Kind: m3.Tonal, Key: "mcp-json"}).Clicked() {
-			c.WriteClipboard(config)
-			c.Toast("JSON config copied")
-		}
 		ui.Column(c.Key("mcp-config")).Padding(12, 16).Radius(m3.Large).Background(sc.SurfaceContainerHighest).Children(func() {
 			m3.Text(c, m3.BodyMedium, config).TextColor(sc.OnSurface).Selectable()
+		})
+		ui.Row(c).Gap(8).Children(func() {
+			if m3.Button(c, m3.ButtonSpec{Label: "Copy JSON config", Icon: m3.IconCopy, Kind: m3.Tonal, Key: "mcp-json"}).Clicked() {
+				c.WriteClipboard(config)
+				c.Toast("JSON config copied")
+			}
 		})
 	}
 }
