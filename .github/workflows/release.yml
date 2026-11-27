@@ -265,18 +265,20 @@ jobs:
           VERSION: ${{ needs.gate.outputs.version }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Echo Music Desktop
+          ## Echo Music Desktop 1.0.1
 
           Official native desktop client for **Echo Music**, built in Go with hardware-accelerated rendering and zero Electron overhead.
 
-          ### Highlights
-          - **Native Go + Hardware UI**: Compiled native binary with GPU-accelerated rendering and fast cold starts across macOS, Windows, and Linux.
-          - **MacBook Notch & Menu Bar Players**: Compact dynamic notch island with a wavy progress scrubber and live lyric line, plus a menu bar / tray mini player with Up Next queue controls.
-          - **Full-Screen 3D Art & Synced Lyrics**: Cursor-reactive 3D tilted album art with specular highlight and big left-aligned synced lyrics with click-to-seek navigation.
-          - **Podcasts & Library Workspace**: Browse podcast shows, episodes, Explore, Home, Library, and Downloads from a unified left navigation rail and `⌘K` search bar.
-          - **10-Band Equalizer & Audio Controls**: Real-time 10-band EQ (`31 Hz – 16 kHz`) with presets, loudness normalization, configurable track crossfade, playback speed, and audio output switching.
-          - **Material You & Dynamic Themes**: Monochrome, Tonal Spot, Vibrant, Expressive, and Gradient Aurora palettes with album artwork color extraction.
-          - **Offline Cache, Downloads & Extras**: Automatic song caching, offline downloads, on-device listening history & stats, Discord Rich Presence, and local MCP server.
+          ### What's New in 1.0.1
+          - **Echo Connect (LAN Sync & Pairing)**: 6-digit pairing between Echo Music Desktop and Android over local Wi-Fi for instant playback handoff, remote control, Google account sync, synced local & Spotify playlists, and podcast progress sync.
+          - **Continue Listening for Podcasts**: Added a dedicated **Continue listening** shelf at the top of the Podcasts page with episode progress bars and automatic metadata hydration (titles, show names, thumbnails, and durations).
+          - **Strict Spotify Track Matching**: Synced Spotify playlists now resolve tracks using strict title, artist, and duration scoring while filtering out unwanted remixes, lofi, slowed/reverb, and cover mismatches.
+          - **Redesigned Settings & AI Control (MCP)**: Categorized Settings with a persistent left navigation rail, unique section icons, a dedicated **AI Control** section for local MCP setup & JSON config, and smoother scrolling.
+          - **UI & Navigation Polish**:
+            - Pinned the top navigation bar on scroll across Home, Podcasts, Explore, Library, Downloads, and Settings.
+            - Moved the playback speed menu between Full Screen and Open Player in the mini player bar.
+            - Removed playlist cover art from the compact scrolled playlist top bar for a cleaner layout.
+            - Fixed horizontal trackpad scrolling accidentally triggering pull-to-refresh.
 
           ### Downloads
           - **macOS** (`universal` — Apple Silicon & Intel): `.dmg`
