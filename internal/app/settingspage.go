@@ -61,7 +61,8 @@ var settingsRows = []settingsRow{
 	{key: "ai", search: "ai artificial intelligence generated exclude skip filter songs", card: (*app).aiFilterCard},
 
 	{key: "h-system", heading: "System"},
-	{key: "desktop", search: "desktop linux notifications mcp ai agent control discord rich presence activity status tray icon wordmark o mark low key subtle notch macbook lyrics", card: (*app).desktopCard},
+	{key: "ai-control", search: "mcp ai control agent claude cursor antigravity server prompt", card: (*app).aiControlCard},
+	{key: "desktop", search: "desktop linux notifications discord rich presence activity status tray icon wordmark o mark low key subtle notch macbook lyrics", card: (*app).desktopCard},
 	{key: "keyboard", search: "keyboard shortcuts keys", card: (*app).keyboardCard},
 
 	{key: "h-data", heading: "Storage and privacy"},
@@ -243,6 +244,14 @@ var settingsCategories = []settingsCategory{
 		},
 	},
 	{
+		title:    "AI Control",
+		subtitle: "Connect local AI assistants via Model Context Protocol (MCP) to control playback and queues.",
+		icon:     m3.IconAutoAwesome,
+		render: func(a *app, c *ui.Context) {
+			a.aiControlCard(c)
+		},
+	},
+	{
 		title:    "Desktop & Shortcuts",
 		subtitle: "System integrations, notch player, Discord Rich Presence, and keyboard shortcuts.",
 		icon:     m3.IconComputer,
@@ -278,6 +287,12 @@ var settingsCategories = []settingsCategory{
 func (a *app) echoConnectCard(c *ui.Context) {
 	a.settingsCard(c, "Echo Connect", m3.IconEchoConnect, func() {
 		a.lanSyncSetting(c)
+	})
+}
+
+func (a *app) aiControlCard(c *ui.Context) {
+	a.settingsCard(c, "AI Control (MCP)", m3.IconAutoAwesome, func() {
+		a.mcpSetting(c)
 	})
 }
 
@@ -352,13 +367,11 @@ func (a *app) settingsCategorizedPage(c *ui.Context, sc m3.Scheme, width float32
 					}
 				}
 				ev := m3.Rail(c, m3.RailSpec{
-					Items:    navItems,
-					Selected: strconv.Itoa(a.settingsTab),
-					Expanded: a.settingsRailExpanded,
+					Items:      navItems,
+					Selected:   strconv.Itoa(a.settingsTab),
+					Expanded:   true,
+					HideToggle: true,
 				})
-				if ev.Toggle {
-					a.settingsRailExpanded = !a.settingsRailExpanded
-				}
 				if ev.Item != "" {
 					if idx, err := strconv.Atoi(ev.Item); err == nil && idx >= 0 && idx < len(settingsCategories) {
 						a.settingsTab = idx
@@ -912,7 +925,6 @@ func (a *app) desktopCard(c *ui.Context) {
 					a.settings.GlobalShortcut = on
 					a.syncShortcut()
 				})
-			a.mcpSetting(c)
 			a.desktopSwitch(c, "Discord Rich Presence", "Share the track, artist, cover and elapsed time while music plays. The status clears when playback pauses or stops.",
 				a.settings.DiscordPresence, func(on bool) {
 					a.settings.DiscordPresence = on

@@ -55,7 +55,7 @@ type app struct {
 	hostPair         *hostPairState
 	settingsTab          int
 	settingsRailExpanded bool
-	settingsScrolls      [7]ui.ScrollState
+	settingsScrolls      [8]ui.ScrollState
 	syncedPlaylists  []lansync.PlaylistSyncDTO
 	lanSyncLogs      []string
 	lanLastSyncAt    time.Time

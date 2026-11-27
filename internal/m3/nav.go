@@ -32,11 +32,12 @@ var railSpring = Spring{260, 1}
 const railFadeGain = 3
 
 type RailSpec struct {
-	Items    []NavItem
-	Footer   []NavItem
-	Selected string
-	Expanded bool
-	TopInset float32
+	Items      []NavItem
+	Footer     []NavItem
+	Selected   string
+	Expanded   bool
+	HideToggle bool
+	TopInset   float32
 }
 
 type RailEvent struct {
@@ -59,13 +60,17 @@ func Rail(c *ui.Context, spec RailSpec) RailEvent {
 		if spec.TopInset > 0 {
 			ui.Box(c).Height(spec.TopInset).FillWidth().Shrink(0).DragWindow()
 		}
-		menu := railMenu(c, p, expanded)
-		reachBy := slop(32)
-		menu.Margin(-reachBy, -reachBy, -reachBy, RailCollapsed/2-MinTarget/2)
-		if menu.Clicked() {
-			event.Toggle = true
+		if !spec.HideToggle {
+			menu := railMenu(c, p, expanded)
+			reachBy := slop(32)
+			menu.Margin(-reachBy, -reachBy, -reachBy, RailCollapsed/2-MinTarget/2)
+			if menu.Clicked() {
+				event.Toggle = true
+			}
+			ui.Box(c).Height(16)
+		} else {
+			ui.Box(c).Height(4)
 		}
-		ui.Box(c).Height(16)
 		for _, item := range spec.Items {
 			if navItem(c, item, item.ID == spec.Selected, expanded, fade, railWidth) {
 				event.Item = item.ID

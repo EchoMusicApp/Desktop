@@ -49,7 +49,7 @@ Add or update only the echomusic entry. If you cannot change the config, show me
 func (a *app) mcpSetting(c *ui.Context) {
 	ui.Column(c.Key("ai-control")).Gap(8).Children(func() {
 		ui.Row(c).Gap(16).AlignItems(ui.Center).Padding(8, 0).Children(func() {
-			settingLabel(c, "AI control", "Allow local MCP clients to search, control playback, edit the queue and rate tracks.").Grow(1)
+			settingLabel(c, "Local MCP server", "Expose a local Model Context Protocol (MCP) endpoint so AI assistants like Claude, Cursor, or Antigravity can search YouTube Music, manage your queue, and control playback.").Grow(1)
 			on := a.settings.MCPControl
 			if m3.Switch(c, &on, "Allow AI control").Changed() {
 				a.settings.MCPControl = on
@@ -100,7 +100,7 @@ func (a *app) mcpSetup(c *ui.Context) {
 	}
 	launch := mcpLaunchFor(executable, runtime.GOOS, os.Getenv("FLATPAK_ID"), os.Getenv("APPIMAGE"))
 	sc := m3.Of(c).Scheme
-	m3.Text(c, m3.BodySmall, "Paste the setup prompt into your agent. Keep Echo Music open while you connect.").TextColor(sc.OnSurfaceVariant)
+	m3.Text(c, m3.BodySmall, "All requests stay local on your machine. Paste the setup prompt below into your AI assistant and keep Echo Music open while connected.").TextColor(sc.OnSurfaceVariant)
 	ui.Row(c).Gap(8).Children(func() {
 		if m3.Button(c, m3.ButtonSpec{Label: "Copy setup prompt", Icon: m3.IconCopy, Kind: m3.Tonal, Key: "mcp-prompt"}).Clicked() {
 			c.WriteClipboard(launch.setupPrompt())

@@ -422,7 +422,6 @@ func (a *app) playerBar(c *ui.Context) {
 			} else {
 				a.compactVolumeControl(c)
 			}
-			a.speedButton(c, "bar-speed")
 			if len(a.lanPeers) > 0 || a.lanActivePeerID != "" {
 				activePeer, isLive := a.activeLANPeer()
 				label := "Echo Connect"
@@ -454,6 +453,7 @@ func (a *app) playerBar(c *ui.Context) {
 			if m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconFullscreen, Label: "Full screen", Key: "bar-fullscreen"}).Clicked() {
 				a.openFullScreen()
 			}
+			a.speedButton(c, "bar-speed")
 			expandIcon, expandLabel := m3.IconExpandLess, "Open the player"
 			if a.nowPlaying.open {
 				expandIcon, expandLabel = m3.IconExpandMore, "Close the player"
