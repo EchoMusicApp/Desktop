@@ -30,7 +30,11 @@ bass, other and vocals. The feature is off by default; enable it under
 
 - **Fast** uses a 10% overlap; **Quality** uses 25% and takes longer.
 - The ONNX provider is chosen automatically (DirectML/CUDA when available,
-  otherwise CPU). CPU separation takes roughly half the song length.
+  otherwise CPU); Auto, CPU, DirectML and CUDA can also be forced in settings.
+  CPU separation takes roughly half the song length.
+- The model and stem files live in `Echo Music Stems` inside the audio cache
+  folder. **Stems folder** in settings lets you pick a different location;
+  existing files are not moved automatically.
 
 ## Limitations
 

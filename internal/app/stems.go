@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/m3"
@@ -168,6 +170,10 @@ func (a *app) separateAll() {
 	}
 	items := make([]youtube.MusicItem, len(a.page.playable))
 	copy(items, a.page.playable)
+	// Global feedback: the batch can run for hours and stays visible after
+	// leaving the playlist page.
+	a.notice = "Separating " + itoa(len(items)) + " tracks in the background…"
+	a.stemsStatus = a.notice
 	startTask(a, &a.stemsTask, noTimeout, func(ctx context.Context) (stems.BatchResult, error) {
 		batch := make([]stems.BatchItem, 0, len(items))
 		for _, item := range items {
@@ -186,11 +192,16 @@ func (a *app) separateAll() {
 			a.notice = "Stem batch: " + err.Error()
 			return
 		}
-		a.stemsStatus = "Separated " + itoa(result.Separated) +
-			", already ready " + itoa(result.Skipped) +
-			", failed " + itoa(len(result.Failed))
+		summary := "Stem batch finished: " + itoa(result.Separated) +
+			" separated, " + itoa(result.Skipped) + " already ready, " +
+			itoa(len(result.Failed)) + " failed"
+		a.stemsStatus = summary
+		a.notice = summary
 		if len(result.Failed) > 0 {
-			a.notice = "Stem batch: " + result.Failed[0]
+			a.notice += " — " + result.Failed[0]
+			a.noticeHelp = true
+		} else {
+			a.noticeHelp = false
 		}
 	})
 }
@@ -233,6 +244,64 @@ func (a *app) stemChips(c *ui.Context) {
 			}
 		}
 	})
+}
+
+func (a *app) stemsCacheRoot() string {
+	if a.settings.CacheDirectory != "" {
+		return a.settings.CacheDirectory
+	}
+	if root, err := mygo.App.Path(mygo.PathCache); err == nil {
+		return root
+	}
+	return ""
+}
+
+func (a *app) chooseStemsDirectory() {
+	current := a.settings.StemsDirectory
+	if current == "" {
+		current = filepath.Join(a.stemsCacheRoot(), "Echo Music Stems")
+	}
+	type chosen struct{ root, err string }
+	spawn(a, func() chosen {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Parent: a.desktop.window(), Title: "Choose stems folder",
+			DefaultPath: current, Directory: true, CreateDirectories: true,
+		})
+		if err != nil {
+			return chosen{err: "Could not open the folder picker: " + err.Error()}
+		}
+		if len(paths) == 0 {
+			return chosen{}
+		}
+		root, err := filepath.Abs(paths[0])
+		if err != nil {
+			return chosen{err: "Could not use that folder: " + err.Error()}
+		}
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return chosen{err: "Could not use that folder: " + err.Error()}
+		}
+		return chosen{root: root}
+	}, func(c chosen) {
+		if c.err != "" {
+			a.stemsDirError = c.err
+			return
+		}
+		if c.root == "" {
+			return
+		}
+		a.settings.StemsDirectory = c.root
+		a.stemsDirError = ""
+		a.saveSettings()
+		a.initStems(a.stemsCacheRoot())
+	})
+}
+
+func (a *app) setStemsProvider(provider string) {
+	a.settings.StemsProvider = provider
+	if a.stems != nil {
+		a.stems.SetOptions(provider, a.settings.StemsFast)
+	}
+	a.saveSettings()
 }
 
 // stemsCard exposes the beta settings in Playback & Sound.
@@ -281,6 +350,32 @@ func (a *app) stemsCard(c *ui.Context) {
 					}
 				}
 			})
+			settingLabel(c, "GPU acceleration", "Auto prefers DirectML or CUDA when ONNX Runtime finds them, otherwise CPU.")
+			providers := []string{"auto", "cpu", "dml", "cuda"}
+			providerLabels := []string{"Auto", "CPU", "DirectML", "CUDA"}
+			picked := 0
+			for i, provider := range providers {
+				if provider == a.settings.StemsProvider {
+					picked = i
+				}
+			}
+			if m3.ButtonGroup(c, "stems-provider", &picked, providerLabels, nil) {
+				a.setStemsProvider(providers[picked])
+			}
+			settingLabel(c, "Stems folder", "The model and separated files are stored here. Changing the folder creates a new cache; existing files are not moved.")
+			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+				location := a.settings.StemsDirectory
+				if location == "" {
+					location = filepath.Join(a.stemsCacheRoot(), "Echo Music Stems")
+				}
+				m3.Text(c, m3.BodyMedium, location).TextColor(sc.OnSurfaceVariant).MinWidth(0).Grow(1).SingleLine()
+				if m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconFolder, Label: "Choose stems folder", Kind: m3.OutlinedIcon, Size: m3.Small40, Key: "stems-folder"}).Clicked() {
+					a.chooseStemsDirectory()
+				}
+			})
+			if a.stemsDirError != "" {
+				m3.Text(c, m3.BodySmall, a.stemsDirError).TextColor(sc.Error)
+			}
 			if a.stemsStatus != "" {
 				m3.Text(c, m3.BodySmall, a.stemsStatus).TextColor(sc.OnSurfaceVariant)
 			}

@@ -70,6 +70,19 @@ func TestStemPlaybackUsesCachedMixAndMask(t *testing.T) {
 	}
 }
 
+func TestStemsProviderSettingReachesTheService(t *testing.T) {
+	service := stems.New(t.TempDir())
+	a := &app{settings: settings.Defaults(), stems: service}
+	a.setStemsProvider("dml")
+	if a.settings.StemsProvider != "dml" || service.Provider() != "dml" {
+		t.Fatalf("provider = %q / %q", a.settings.StemsProvider, service.Provider())
+	}
+	a.setStemsProvider("auto")
+	if service.Provider() != "auto" {
+		t.Fatalf("provider = %q", service.Provider())
+	}
+}
+
 func TestStemDefaultsAndHelpers(t *testing.T) {
 	s := settings.Defaults()
 	if s.Stems || !s.StemsFast || s.StemsProvider != "auto" {

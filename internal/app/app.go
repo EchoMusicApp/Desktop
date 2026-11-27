@@ -79,6 +79,7 @@ type app struct {
 	stemsHoldSaved  [4]bool
 	stemsTask       task
 	stemsStatus     string
+	stemsDirError   string
 
 	// Opt-in video backdrop for the full-screen player (beta).
 	canvas       *canvas.Service
