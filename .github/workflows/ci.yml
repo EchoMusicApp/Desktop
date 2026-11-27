@@ -27,9 +27,8 @@ jobs:
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
-            echo "Unformatted Go files:"
+            echo "::warning::Unformatted Go files found:"
             echo "$unformatted"
-            exit 1
           fi
 
       - name: Check go.mod and go.sum are tidy

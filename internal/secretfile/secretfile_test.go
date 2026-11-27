@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +71,9 @@ func TestAnUnencryptedCredentialIsEncryptedInPlace(t *testing.T) {
 	if strings.Contains(string(data), "SAPISID") {
 		t.Error("the file still holds the cookie in plain text")
 	}
-	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
 	}
 
@@ -117,7 +120,7 @@ func TestWithoutAStoreTheFileIsPrivate(t *testing.T) {
 	if err := f.Save(ctx, "KEY"); err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(path); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 		t.Fatalf("stat = %v, %v; want a 0600 file", info, err)
 	}
 	if got, err := f.Load(ctx); err != nil || got != "KEY" {
