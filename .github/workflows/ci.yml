@@ -1,0 +1,213 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Check go.mod and go.sum are tidy
+        run: go mod tidy -diff
+
+      - name: Cross-compile all release targets
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            echo "::group::build $target"
+            if [ "$os" = "windows" ]; then
+              modfile="$(./scripts/dux-go-modfile.sh)"
+              GOOS="$os" GOARCH="$arch" GOFLAGS="-modfile=${modfile}" go build ./...
+            else
+              GOOS="$os" GOARCH="$arch" go build ./...
+            fi
+            echo "::endgroup::"
+          done
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: darwin
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install ffmpeg (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg dbus-x11
+
+      - name: Install ffmpeg (macOS)
+        if: matrix.platform == 'darwin'
+        run: brew install ffmpeg
+
+      - name: Install ffmpeg (Windows)
+        if: matrix.platform == 'windows'
+        run: choco install ffmpeg -y
+
+      - name: Run tests
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            modfile="$(./scripts/dux-go-modfile.sh)"
+            GOFLAGS="-modfile=${modfile}" go test ./...
+          elif [ "${{ matrix.platform }}" = "linux" ] && command -v dbus-run-session >/dev/null 2>&1; then
+            dbus-run-session -- go test -race ./...
+          else
+            go test -race ./...
+          fi
+
+  build-packages:
+    needs: [verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: darwin-universal, os: macos-latest }
+          - { platform: linux-amd64, os: ubuntu-latest }
+          - { platform: linux-arm64, os: ubuntu-latest }
+          - { platform: windows-amd64, os: ubuntu-latest }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up the Windows installer tool
+        if: startsWith(matrix.platform, 'windows-')
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nsis
+
+      - name: Build packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          platform="${{ matrix.platform }}"
+          if [ "$platform" = "darwin-universal" ]; then
+            ./scripts/fetch-tools.sh --minimal darwin-arm64
+            ./scripts/fetch-tools.sh --minimal darwin-amd64
+          else
+            ./scripts/fetch-tools.sh --minimal "$platform"
+          fi
+          if [[ "$platform" == windows-* ]]; then
+            export GOFLAGS="${GOFLAGS:+$GOFLAGS }-modfile=$(./scripts/dux-go-modfile.sh)"
+          fi
+          go tool mygo build -o dist -platform "${platform/-//}"
+
+      - name: Set up Linux package tools
+        if: startsWith(matrix.platform, 'linux-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends imagemagick
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          curl --fail --location --silent --show-error \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+            --output "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+
+      - name: Collect packages
+        run: |
+          mkdir artifacts
+          version="$(jq -r .version mygo.json)"
+          arch="${{ matrix.platform }}"; arch="${arch#*-}"
+          case "${{ matrix.platform }}" in
+            darwin-*)
+              dmg="$(find "dist/${{ matrix.platform }}" -maxdepth 1 -name '*.dmg')"
+              cp "$dmg" "artifacts/Echo-Music-${version}-macos-${arch}.dmg"
+              ;;
+            windows-*)
+              installer="$(find "dist/${{ matrix.platform }}" -maxdepth 1 -name '*-setup-*.exe')"
+              cp "$installer" "artifacts/Echo-Music-${version}-windows-${arch}-setup.exe"
+              python3 - "dist/${{ matrix.platform }}" "artifacts/Echo-Music-${version}-windows-${arch}-portable.zip" <<'PY'
+          from pathlib import Path
+          import sys
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          source = Path(sys.argv[1])
+          output = Path(sys.argv[2])
+          with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+              for path in sorted(source.rglob("*")):
+                  if path.is_dir():
+                      continue
+                  relative = path.relative_to(source)
+                  if relative.parent == Path(".") and (
+                      (relative.name.startswith("update-") and path.suffix == ".json")
+                      or path.suffix == ".delta"
+                      or path.name.endswith(".tar.gz")
+                      or ("-setup-" in relative.name and path.suffix == ".exe")
+                  ):
+                      continue
+                  archive.write(path, Path("Echo Music") / relative)
+          PY
+              ;;
+            linux-*)
+              scripts/package-linux.sh "${{ matrix.platform }}" "$version" artifacts minimal
+              ;;
+          esac
+          ls -lh artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}
+          path: artifacts/*
+          retention-days: 7
+          if-no-files-found: error
+
+  checks:
+    if: always()
+    needs: [verify, test, build-packages]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All checks must pass
+        run: |
+          if [ "${{ needs.verify.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.build-packages.result }}" != "success" ]; then
+            echo "One or more CI checks failed."
+            exit 1
+          fi
+          echo "All CI checks passed."
