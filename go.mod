@@ -8,6 +8,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.4
 	github.com/duxlabs-dev/dux-go v1.6.3-0.20261120085103-baef60180756
 	github.com/ebitengine/oto/v3 v3.5.1
+	github.com/ebitengine/purego v0.11.3
 	github.com/egoist/mygo v0.9.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getsentry/sentry-go v0.50.0
@@ -20,7 +21,6 @@ require (
 require (
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/cloudflare/circl v1.6.2 // indirect
-	github.com/ebitengine/purego v0.11.3 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/go-text/typesetting-utils v0.0.0-20261009215314-bb530f4842f3 // indirect
 	github.com/jfreymuth/pulse v0.1.3 // indirect

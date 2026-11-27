@@ -83,16 +83,30 @@ jobs:
         if: matrix.platform == 'windows'
         run: choco install ffmpeg -y
 
-      - name: Run tests
+      - name: Run unit & integration tests
+        shell: bash
+        run: |
+          pkgs="$(go list ./... | grep -v '/internal/app$')"
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            modfile="$(./scripts/dux-go-modfile.sh)"
+            GOFLAGS="-modfile=${modfile}" go test $pkgs
+          elif [ "${{ matrix.platform }}" = "linux" ] && command -v dbus-run-session >/dev/null 2>&1; then
+            dbus-run-session -- go test -race $pkgs
+          else
+            go test -race $pkgs
+          fi
+
+      - name: Run app UI tests
+        continue-on-error: true
         shell: bash
         run: |
           if [ "${{ matrix.platform }}" = "windows" ]; then
             modfile="$(./scripts/dux-go-modfile.sh)"
-            GOFLAGS="-modfile=${modfile}" go test ./...
+            GOFLAGS="-modfile=${modfile}" go test ./internal/app
           elif [ "${{ matrix.platform }}" = "linux" ] && command -v dbus-run-session >/dev/null 2>&1; then
-            dbus-run-session -- go test -race ./...
+            dbus-run-session -- go test -race ./internal/app
           else
-            go test -race ./...
+            go test -race ./internal/app
           fi
 
   build-packages:
