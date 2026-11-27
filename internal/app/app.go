@@ -53,6 +53,9 @@ type app struct {
 	lanStatus        string
 	pairDialog       *pairDialogState
 	hostPair         *hostPairState
+	settingsTab          int
+	settingsRailExpanded bool
+	settingsScrolls      [7]ui.ScrollState
 	syncedPlaylists  []lansync.PlaylistSyncDTO
 	lanSyncLogs      []string
 	lanLastSyncAt    time.Time

@@ -47,8 +47,9 @@ type settingsSearchState struct {
 }
 
 var settingsRows = []settingsRow{
-	{key: "h-account", heading: "Account"},
+	{key: "h-account", heading: "Account and Sync"},
 	{key: "account", search: "sign in profile account session", card: (*app).accountCard},
+	{key: "echo-connect", search: "echo connect lan sync pair code spotify playlists handoff remote phone", card: (*app).echoConnectCard},
 
 	{key: "h-look", heading: "Appearance and sound"},
 	{key: "appearance", search: "theme appearance system light dark colour color colours colors violet indigo blue sky teal green lime amber orange red rose orchid hue palette tonal spot vibrant expressive neutral monochrome artwork dynamic matugen source wavy progress wave flat bar", card: (*app).appearanceCard},
@@ -165,8 +166,8 @@ func (a *app) settingsPage(c *ui.Context) {
 		return
 	}
 	w, _ := c.Size()
-	if w >= 880 && query == "" {
-		a.settingsBentoPage(c, sc)
+	if query == "" {
+		a.settingsCategorizedPage(c, sc, w)
 		return
 	}
 	a.list.Key = func(i int) any {
@@ -198,55 +199,184 @@ func (a *app) settingsPage(c *ui.Context) {
 	}).Grow(1).Padding(0, 0, a.clearance()-16).TrackScroll(a.page.scroll)
 }
 
-func (a *app) settingsBentoPage(c *ui.Context, sc m3.Scheme) {
-	sectionTitle := func(title string) {
-		ui.Row(c).Padding(6, 4, 2).Children(func() {
-			m3.EmphasizedText(c, m3.LabelLarge, strings.ToUpper(title)).
-				TextColor(sc.Primary).LetterSpacing(0.8).FontFeatures("case")
-		})
+type settingsCategory struct {
+	title    string
+	subtitle string
+	icon     *ui.SVG
+	render   func(a *app, c *ui.Context)
+}
+
+var settingsCategories = []settingsCategory{
+	{
+		title:    "Account",
+		subtitle: "Manage your YouTube Music session and connected profile.",
+		icon:     m3.IconPerson,
+		render: func(a *app, c *ui.Context) {
+			a.accountCard(c)
+		},
+	},
+	{
+		title:    "Echo Connect",
+		subtitle: "Pair with your phone over Wi-Fi for playback handoff, account login, and playlist sync.",
+		icon:     m3.IconEchoConnect,
+		render: func(a *app, c *ui.Context) {
+			a.echoConnectCard(c)
+		},
+	},
+	{
+		title:    "Appearance",
+		subtitle: "Customize theme mode, dynamic colors, player progress bar, and UI zoom.",
+		icon:     m3.IconPalette,
+		render: func(a *app, c *ui.Context) {
+			a.appearanceCard(c)
+		},
+	},
+	{
+		title:    "Playback & Sound",
+		subtitle: "Configure audio quality, crossfade, AI track filtering, loudness, and equalizer.",
+		icon:     m3.IconMusicNote,
+		render: func(a *app, c *ui.Context) {
+			a.playbackCard(c)
+			a.soundCard(c)
+			a.crossfadeCard(c)
+			a.aiFilterCard(c)
+		},
+	},
+	{
+		title:    "Desktop & Shortcuts",
+		subtitle: "System integrations, notch player, Discord Rich Presence, and keyboard shortcuts.",
+		icon:     m3.IconComputer,
+		render: func(a *app, c *ui.Context) {
+			a.desktopCard(c)
+			a.keyboardCard(c)
+		},
+	},
+	{
+		title:    "Storage & Privacy",
+		subtitle: "Manage song cache, diagnostics telemetry, and listening history.",
+		icon:     m3.IconShield,
+		render: func(a *app, c *ui.Context) {
+			a.playbackCacheCard(c)
+			a.privacyCard(c)
+			a.historyCard(c)
+		},
+	},
+	{
+		title:    "About & Support",
+		subtitle: "Updates, bundled media tools, logs, bug reports, and project support.",
+		icon:     m3.IconInfo,
+		render: func(a *app, c *ui.Context) {
+			a.updatesCard(c)
+			a.toolsCard(c)
+			a.reportCard(c)
+			a.logsCard(c)
+			a.supportCard(c)
+		},
+	},
+}
+
+func (a *app) echoConnectCard(c *ui.Context) {
+	a.settingsCard(c, "Echo Connect", m3.IconEchoConnect, func() {
+		a.lanSyncSetting(c)
+	})
+}
+
+func (a *app) settingsCategorizedPage(c *ui.Context, sc m3.Scheme, width float32) {
+	if a.settingsTab < 0 || a.settingsTab >= len(settingsCategories) {
+		a.settingsTab = 0
 	}
-	ui.Scroll(c.Key("settings-bento")).Grow(1).TrackScroll(a.page.scroll).Children(func() {
-		ui.Column(c).FillWidth().AlignItems(ui.Center).Padding(8, pageGutter, a.clearance()).Children(func() {
-			ui.Column(c).FillWidth().MaxWidth(1060).Gap(14).Children(func() {
-				a.accountCard(c)
-				sectionTitle("Echo Connect")
-				a.settingsCard(c, "Echo Connect", m3.IconEchoConnect, func() {
-					a.lanSyncSetting(c)
+	active := settingsCategories[a.settingsTab]
+
+	renderNavItem := func(idx int, cat settingsCategory, compact bool) {
+		selected := a.settingsTab == idx
+		bg := ui.Transparent
+		fg := sc.OnSurfaceVariant
+		if selected {
+			bg = sc.SecondaryContainer
+			fg = sc.OnSecondaryContainer
+		}
+		btn := ui.ButtonBase(c.Key("settings-tab-" + strconv.Itoa(idx)))
+		if compact {
+			btn.Height(36).Padding(0, 14).Radius(m3.Full).Gap(8).Justify(ui.Start).AlignItems(ui.Center).Cursor(ui.CursorPointer)
+		} else {
+			btn.FillWidth().Height(42).Padding(0, 16).Radius(m3.Full).Gap(12).Justify(ui.Start).AlignItems(ui.Center).Cursor(ui.CursorPointer)
+		}
+		btn.Label(cat.title).
+			Background(m3.StateFill(bg, sc.OnSurface, btn.Hovered(), btn.Pressed(), btn.FocusVisible()))
+		btn.Children(func() {
+			ui.Icon(c, cat.icon).FontSize(18).TextColor(fg).Shrink(0)
+			if selected {
+				m3.EmphasizedText(c, m3.LabelLarge, cat.title).TextColor(fg).SingleLine()
+			} else {
+				m3.Text(c, m3.LabelLarge, cat.title).TextColor(fg).SingleLine()
+			}
+		})
+		if btn.Clicked() {
+			a.settingsTab = idx
+			a.page.scroll = &ui.ScrollState{}
+		}
+	}
+
+	if width < 760 {
+		ui.Scroll(c.Key("settings-narrow")).Grow(1).MinHeight(0).TrackScroll(a.page.scroll).Children(func() {
+			ui.Column(c).FillWidth().Padding(8, pageGutter, a.clearance()).Gap(14).Children(func() {
+				ui.Row(c).FillWidth().Gap(8).Wrap().Children(func() {
+					for i, cat := range settingsCategories {
+						renderNavItem(i, cat, true)
+					}
 				})
-				ui.Row(c).FillWidth().Gap(14).AlignItems(ui.Start).Children(func() {
-					ui.Column(c.Key("bento-left")).Grow(1).Basis(0).MinWidth(0).Gap(12).Children(func() {
-						sectionTitle("Appearance")
-						a.appearanceCard(c)
-						sectionTitle("Playback")
-						a.playbackCard(c)
-						a.crossfadeCard(c)
-						a.aiFilterCard(c)
-						sectionTitle("Keyboard")
-						a.keyboardCard(c)
-					})
-					ui.Column(c.Key("bento-right")).Grow(1).Basis(0).MinWidth(0).Gap(12).Children(func() {
-						sectionTitle("Sound")
-						a.soundCard(c)
-						sectionTitle("System")
-						a.desktopCard(c)
-						sectionTitle("Storage & privacy")
-						a.playbackCacheCard(c)
-						a.privacyCard(c)
-						a.historyCard(c)
-						sectionTitle("About & diagnostics")
-						a.updatesCard(c)
-						a.toolsCard(c)
-					})
+				ui.Column(c).Gap(2).Padding(4, 2).Children(func() {
+					m3.EmphasizedText(c, m3.HeadlineSmall, active.title).TextColor(sc.OnSurface)
+					m3.Text(c, m3.BodyMedium, active.subtitle).TextColor(sc.OnSurfaceVariant)
 				})
-				ui.Row(c).FillWidth().Gap(14).AlignItems(ui.Stretch).Children(func() {
-					ui.Column(c.Key("bento-report")).Grow(1).Basis(0).MinWidth(0).Children(func() {
-						a.reportCard(c)
-					})
-					ui.Column(c.Key("bento-logs")).Grow(1).Basis(0).MinWidth(0).Children(func() {
-						a.logsCard(c)
-					})
+				ui.Column(c).FillWidth().Gap(14).Children(func() {
+					active.render(a, c)
 				})
-				a.supportCard(c)
+			})
+		})
+		return
+	}
+
+	ui.Row(c.Key("settings-split")).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		// Left category rail reusing m3.Rail so icons, sizing, collapse/expand, and spacing match main rail
+		ui.Column(c.Key("settings-rail-wrap")).FillHeight().MinHeight(0).Shrink(0).
+			BorderWidth(0, 1, 0, 0).BorderColor(sc.OutlineVariant.Alpha(0.2)).
+			Children(func() {
+				navItems := make([]m3.NavItem, len(settingsCategories))
+				for i, cat := range settingsCategories {
+					navItems[i] = m3.NavItem{
+						ID:       strconv.Itoa(i),
+						Label:    cat.title,
+						Icon:     cat.icon,
+						Selected: cat.icon,
+					}
+				}
+				ev := m3.Rail(c, m3.RailSpec{
+					Items:    navItems,
+					Selected: strconv.Itoa(a.settingsTab),
+					Expanded: a.settingsRailExpanded,
+				})
+				if ev.Toggle {
+					a.settingsRailExpanded = !a.settingsRailExpanded
+				}
+				if ev.Item != "" {
+					if idx, err := strconv.Atoi(ev.Item); err == nil && idx >= 0 && idx < len(settingsCategories) {
+						a.settingsTab = idx
+					}
+				}
+			})
+
+		// Right scrollable content pane with per-tab ScrollState to prevent scroll jitter
+		scrollState := &a.settingsScrolls[a.settingsTab]
+		ui.Scroll(c.Key("settings-content-" + strconv.Itoa(a.settingsTab))).Grow(1).FillHeight().MinHeight(0).TrackScroll(scrollState).Children(func() {
+			ui.Column(c).FillWidth().AlignItems(ui.Start).Padding(16, pageGutter, a.clearance()).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(760).Gap(14).Children(func() {
+					ui.Column(c).Gap(2).Padding(0, 4, 4, 4).Children(func() {
+						m3.EmphasizedText(c, m3.HeadlineSmall, active.title).TextColor(sc.OnSurface)
+						m3.Text(c, m3.BodyMedium, active.subtitle).TextColor(sc.OnSurfaceVariant)
+					})
+					active.render(a, c)
+				})
 			})
 		})
 	})
