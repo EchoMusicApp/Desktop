@@ -7,6 +7,10 @@ import (
 	"syscall"
 )
 
+func setReuseAddr(fd uintptr) {
+	_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+}
+
 func setReusePort(fd uintptr) {
 	_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEPORT, 1)
 }

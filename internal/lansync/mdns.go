@@ -83,7 +83,7 @@ func (m *mdnsService) Start(ctx context.Context) error {
 		Control: func(network, address string, c syscall.RawConn) error {
 			var setErr error
 			_ = c.Control(func(fd uintptr) {
-				_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+				setReuseAddr(fd)
 				setReusePort(fd)
 			})
 			return setErr

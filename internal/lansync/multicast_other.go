@@ -1,4 +1,4 @@
-//go:build !darwin && !dragonfly && !freebsd && !netbsd && !openbsd
+//go:build !darwin && !dragonfly && !freebsd && !netbsd && !openbsd && !windows
 
 package lansync
 
@@ -6,6 +6,10 @@ import (
 	"net"
 	"syscall"
 )
+
+func setReuseAddr(fd uintptr) {
+	_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+}
 
 func setReusePort(fd uintptr) {}
 
