@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/EchoMusicApp/Echo-Music/internal/proc"
 )
 
 // TrackDTO is the wire representation of a queued song or podcast episode shared between Android and Desktop.
@@ -294,16 +296,16 @@ func (m *Manager) adbBridgeLoop(ctx context.Context, desktopPort int) {
 	syncTunnels := func() {
 		if desktopPort > 0 {
 			cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			_ = exec.CommandContext(cctx, adbPath, "reverse", fmt.Sprintf("tcp:%d", desktopPort), fmt.Sprintf("tcp:%d", desktopPort)).Run()
+			_ = proc.Command(cctx, adbPath, "reverse", fmt.Sprintf("tcp:%d", desktopPort), fmt.Sprintf("tcp:%d", desktopPort)).Run()
 			cancel()
 		}
 		cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		_ = exec.CommandContext(cctx, adbPath, "forward", fmt.Sprintf("tcp:%d", preferredAndroidPort), fmt.Sprintf("tcp:%d", preferredAndroidPort)).Run()
+		_ = proc.Command(cctx, adbPath, "forward", fmt.Sprintf("tcp:%d", preferredAndroidPort), fmt.Sprintf("tcp:%d", preferredAndroidPort)).Run()
 		cancel()
 		for _, p := range m.Peers() {
 			if p.Platform == "android" && p.Port > 0 && p.Port != preferredAndroidPort {
 				cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-				_ = exec.CommandContext(cctx, adbPath, "forward", fmt.Sprintf("tcp:%d", p.Port), fmt.Sprintf("tcp:%d", p.Port)).Run()
+				_ = proc.Command(cctx, adbPath, "forward", fmt.Sprintf("tcp:%d", p.Port), fmt.Sprintf("tcp:%d", p.Port)).Run()
 				cancel()
 			}
 		}
