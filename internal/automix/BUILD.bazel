@@ -1,0 +1,20 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "automix",
+    srcs = [
+        "analysis.go",
+        "blend.go",
+        "harmony.go",
+        "service.go",
+    ],
+    importpath = "github.com/EchoMusicApp/Echo-Music/internal/automix",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/proc"],
+)
+
+go_test(
+    name = "automix_test",
+    srcs = ["automix_test.go"],
+    embed = [":automix"],
+)

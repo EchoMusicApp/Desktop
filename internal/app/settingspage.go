@@ -13,9 +13,9 @@ import (
 
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
 	"github.com/EchoMusicApp/Echo-Music/internal/keymap"
-	"github.com/EchoMusicApp/Echo-Music/internal/settings"
 	"github.com/EchoMusicApp/Echo-Music/internal/m3"
 	"github.com/EchoMusicApp/Echo-Music/internal/player"
+	"github.com/EchoMusicApp/Echo-Music/internal/settings"
 )
 
 var swatches = []struct{ name, hex string }{
@@ -239,6 +239,7 @@ var settingsCategories = []settingsCategory{
 		render: func(a *app, c *ui.Context) {
 			a.playbackCard(c)
 			a.soundCard(c)
+			a.stemsCard(c)
 			a.crossfadeCard(c)
 			a.aiFilterCard(c)
 		},
@@ -675,6 +676,30 @@ func (a *app) crossfadeCard(c *ui.Context) {
 			m3.EmphasizedText(c, m3.TitleMedium, strconv.Itoa(settings.ClampCrossfade(a.settings.CrossfadeSeconds))+" s").
 				Width(48).Shrink(0).TextAlign(ui.End).TextColor(sc.OnSurface)
 		})
+		for _, option := range []struct {
+			label string
+			desc  string
+			value *bool
+			key   string
+		}{
+			{"Beat alignment", "Align the blend and the incoming track to their beat grids (16 beats of the outgoing song).", &a.settings.AutomixBeatAlign, "automix-beat"},
+			{"Harmonic mixing", "Prefer the next track that fits the current Camelot key.", &a.settings.AutomixHarmonic, "automix-harmonic"},
+			{"Gapless", "Play consecutive tracks without an overlap.", &a.settings.AutomixGapless, "automix-gapless"},
+		} {
+			opt := option
+			ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+				settingLabel(c, opt.label, opt.desc).Grow(1)
+				on := *opt.value
+				if m3.Switch(c, &on, opt.label).Changed() {
+					*opt.value = on
+					a.applyCrossfade()
+					a.saveSettings()
+				}
+			})
+		}
+		if a.automixStatus != "" {
+			m3.Text(c, m3.BodySmall, a.automixStatus).TextColor(sc.OnSurfaceVariant)
+		}
 	})
 }
 

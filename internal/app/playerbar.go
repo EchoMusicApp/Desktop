@@ -4,10 +4,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/EchoMusicApp/Echo-Music/internal/keymap"
 	"github.com/EchoMusicApp/Echo-Music/internal/m3"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) transport(c *ui.Context, size float32, gap float32) {
@@ -402,6 +402,7 @@ func (a *app) playerBar(c *ui.Context) {
 			mid.Grow(midGrow).Basis(0).MinWidth(220).MaxWidth(600)
 		}
 		mid.Children(func() {
+			a.stemChipsBar(c)
 			ui.Row(c.Key("bar-transport")).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
 				a.transport(c, 36, 4)
 			})

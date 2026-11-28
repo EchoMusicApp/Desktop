@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
-	"github.com/EchoMusicApp/Echo-Music/internal/ytdlp"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
+	"github.com/EchoMusicApp/Echo-Music/internal/ytdlp"
 )
 
 func resolveAudio(client *youtube.Client, auth *audioAuth, traces *resolveTraces) audio.Resolver {
@@ -90,6 +90,7 @@ func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed
 	local := a.downloaded(item.VideoID)
 	log.Printf("playback: resolving video_id=%s", item.VideoID)
 	startTask(a, &a.stream, audio.ResolveTimeout, func(ctx context.Context) (resolvedAudio, error) {
+		a.stopStemMixer(false)
 		a.player.Stop()
 		if err := a.player.SetSpeed(ctx, speed); err != nil {
 			return resolvedAudio{}, err
@@ -117,6 +118,11 @@ func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed
 			startAt = max(startAt, episodeProgressPosition(item, found.total))
 		}
 		found.playErr = a.player.PlayAtContext(ctx, found.url, startAt, false)
+		if found.playErr == nil {
+			if err := a.startStemMixer(item, startAt, true); err != nil {
+				log.Printf("stems: could not start mixer for %s: %v", item.VideoID, err)
+			}
+		}
 		return found, nil
 	}, func(found resolvedAudio, err error) {
 		if found.loudnessOK {
@@ -160,6 +166,10 @@ func (a *app) audioStarted(item youtube.MusicItem, found resolvedAudio, position
 		cache.Add(item.VideoID, found.url)
 	}
 	a.warmNext()
+	if a.settings.VideoCanvas {
+		a.run(func() { a.loadCanvas(item) })
+	}
+	a.analyzeCurrent(item, found.url)
 }
 
 const preloadLead = 20 * time.Second
@@ -179,11 +189,21 @@ func (a *app) following() (int, youtube.MusicItem, bool) {
 	if !ok {
 		return 0, youtube.MusicItem{}, false
 	}
+	if a.settings.AutomixHarmonic && len(a.queue.items) > 1 {
+		candidates := make([]int, 0, 3)
+		for j := i + 1; j < len(a.queue.items) && len(candidates) < 3; j++ {
+			candidates = append(candidates, j)
+		}
+		i = a.harmonicallyNext(i, candidates)
+	}
 	return i, a.queue.at(i), true
 }
 
 func (a *app) syncPreload() {
 	_, next, ok := a.following()
+	if ok {
+		a.analyzeAhead(next)
+	}
 	if ok && a.settings.ExcludeAIGenerated && isMusicTrack(next) && a.aiDisclosure(next) != youtube.AINone {
 		ok = false
 	}

@@ -120,6 +120,13 @@ func (a *app) fullScreenView(c *ui.Context) {
 	})
 
 	root.Children(func() {
+		if a.canvasVisible() {
+			ui.Box(c.Key("fs-canvas")).Absolute().Fill().PassThrough().Children(func() {
+				ui.Video(c, a.canvasPlayer).Fill().Fit(ui.Cover)
+			})
+			ui.Box(c.Key("fs-canvas-scrim")).Absolute().Fill().PassThrough().
+				Background(ui.RGB(10, 10, 14).Alpha(0.45))
+		}
 		ui.Row(c.Key("fs-topbar")).FillWidth().Padding(20, 28, 8).Justify(ui.SpaceBetween).AlignItems(ui.Center).Shrink(0).Children(func() {
 			if m3.IconButton(c, m3.IconButtonSpec{
 				Icon: m3.IconFullscreenExit, Label: "Exit full screen", Kind: m3.TonalIcon, Size: m3.Small40, Key: "fs-exit",
@@ -219,6 +226,7 @@ func (a *app) fullScreenView(c *ui.Context) {
 			ui.Column(c).AlignItems(ui.Center).Gap(4).MaxWidth(640).Children(func() {
 				m3.EmphasizedText(c, m3.HeadlineSmall, a.current.Title).TextColor(ui.RGB(255, 255, 255)).TextAlign(ui.Center).MaxLines(2)
 				m3.Text(c, m3.BodyLarge, shownArtist(a.current)).TextColor(ui.RGB(255, 255, 255).Alpha(0.72)).TextAlign(ui.Center).SingleLine()
+				a.stemPanelControls(c)
 			})
 		})
 	})

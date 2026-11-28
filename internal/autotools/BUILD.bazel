@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "autotools",
+    srcs = ["autotools.go"],
+    importpath = "github.com/EchoMusicApp/Echo-Music/internal/autotools",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/proc"],
+)
+
+go_test(
+    name = "autotools_test",
+    srcs = ["autotools_test.go"],
+    embed = [":autotools"],
+)
