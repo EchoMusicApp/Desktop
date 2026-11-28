@@ -12,10 +12,11 @@ bass, other and vocals. The feature is off by default; enable it under
   `soundfile` packages, then downloads the 166 MB model once.
 - The helper writes a four-channel cache file plus four mono WAV files under
   `Echo Music Stems` inside the audio cache folder.
-- The enabled mono stems are mixed into a temporary stereo WAV that the normal
-  player plays. Queue, crossfade, automix and next-track therefore keep working
-  exactly as they do for any local file.
-- Toggling a stem reuses a cached mix for that on/off pattern, so it is quick.
+- The four mono stems play through four synchronized players. Toggling a stem
+  only changes that player's volume: no render, no source reload and no click
+  or gap.
+- The main player keeps running muted as the timeline for queue, crossfade,
+  automix and next-track, so those features are unchanged.
 
 ## Controls
 

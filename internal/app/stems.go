@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/m3"
+	"github.com/EchoMusicApp/Echo-Music/internal/stemplayer"
 	"github.com/EchoMusicApp/Echo-Music/internal/stems"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
 )
@@ -81,27 +82,57 @@ func (a *app) stemPlaybackPath(item youtube.MusicItem) string {
 	return path
 }
 
-// applyStems restarts playback on a freshly mixed stem file at the same
-// position. Queue, automix and next-track logic keep using the normal player.
+// startStemMixer starts four synchronized players for the separated song.
+// The main player keeps running (muted) so queue, automix and next-track work.
+func (a *app) startStemMixer(item youtube.MusicItem, at time.Duration, playing bool) error {
+	if !a.settings.Stems || a.stems == nil || !a.stems.Cached(item.VideoID) {
+		return nil
+	}
+	if a.stemMixer == nil {
+		a.stemMixer = stemplayer.New()
+	}
+	master := a.player.Volume()
+	if master <= 0 {
+		master = 1
+	}
+	if err := a.stemMixer.Start(item.VideoID, a.stems.Paths(item.VideoID), at, playing, master); err != nil {
+		a.notice = "Stems: " + err.Error()
+		return err
+	}
+	a.stemMainVolume = master
+	a.player.SetVolume(0)
+	return nil
+}
+
+// stopStemMixer releases the four players and optionally restores main audio.
+func (a *app) stopStemMixer(restoreMain bool) {
+	if a.stemMixer == nil || !a.stemMixer.Active() {
+		return
+	}
+	a.stemMixer.Stop()
+	if restoreMain {
+		a.player.SetVolume(a.stemMainVolume)
+	}
+}
+
+// applyStems re-syncs existing stem players. It never reloads a source, so
+// toggling a stem is silent apart from that stem's volume change.
 func (a *app) applyStems() {
+	if a.stemMixer != nil && a.stemMixer.Active() {
+		a.stemMixer.Sync(a.player.Position(), a.player.Playing())
+		return
+	}
 	if a.stems == nil || a.current.VideoID == "" {
 		return
 	}
-	path := a.stemPlaybackPath(a.current)
-	if path == "" {
-		return
-	}
-	at, playing := a.player.Position(), a.player.Playing()
-	if err := a.player.PlayAt(path, at, !playing); err != nil {
-		a.notice = "Stems: " + err.Error()
-	}
+	_ = a.startStemMixer(a.current, a.player.Position(), a.player.Playing())
 }
 
 func (a *app) setStems(on bool) {
 	a.settings.Stems = on
 	a.saveSettings()
 	if !on {
-		a.applyStems()
+		a.stopStemMixer(true)
 		return
 	}
 	if a.stems == nil {
@@ -124,6 +155,10 @@ func (a *app) toggleStem(index int) {
 		return
 	}
 	a.stemsMask[index] = !a.stemsMask[index]
+	if a.stemMixer != nil && a.stemMixer.Active() {
+		a.stemMixer.SetEnabled(index, a.stemsMask[index])
+		return
+	}
 	a.applyStems()
 }
 
@@ -147,7 +182,9 @@ func (a *app) stemHoldKeys(c *ui.Context) {
 			if a.stemsHoldActive[i] {
 				a.stemsMask[i] = a.stemsHoldSaved[i]
 				a.stemsHoldActive[i] = false
-				a.applyStems()
+				if a.stemMixer != nil && a.stemMixer.Active() {
+					a.stemMixer.SetEnabled(i, a.stemsMask[i])
+				}
 			} else {
 				a.toggleStem(i)
 			}
@@ -157,7 +194,9 @@ func (a *app) stemHoldKeys(c *ui.Context) {
 			a.stemsHoldSaved[i] = a.stemsMask[i]
 			a.stemsMask[i] = false
 			a.stemsHoldActive[i] = true
-			a.applyStems()
+			if a.stemMixer != nil && a.stemMixer.Active() {
+				a.stemMixer.SetEnabled(i, false)
+			}
 		}
 	}
 }

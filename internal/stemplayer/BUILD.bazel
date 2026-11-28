@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "stemplayer",
+    srcs = ["stemplayer.go"],
+    importpath = "github.com/EchoMusicApp/Echo-Music/internal/stemplayer",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/player"],
+)
+
+go_test(
+    name = "stemplayer_test",
+    srcs = ["stemplayer_test.go"],
+    embed = [":stemplayer"],
+)

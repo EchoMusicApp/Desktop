@@ -406,6 +406,14 @@ const pollInterval = 250 * time.Millisecond
 func (a *app) startTicker() {
 	failure := ""
 	a.every(pollInterval, func() {
+		if a.stemMixer != nil && a.stemMixer.Active() {
+			// The main player is only a muted timeline for automix; keep it
+			// silent and pull the four stem players back into sync.
+			if a.player.Volume() != 0 {
+				a.player.SetVolume(0)
+			}
+			a.stemMixer.Sync(a.player.Position(), a.player.Playing())
+		}
 		now := a.player.Failure()
 		if a.player.Playing() || a.player.Ended() || now != failure {
 			failure = now

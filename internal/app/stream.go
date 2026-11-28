@@ -90,6 +90,7 @@ func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed
 	local := a.downloaded(item.VideoID)
 	log.Printf("playback: resolving video_id=%s", item.VideoID)
 	startTask(a, &a.stream, audio.ResolveTimeout, func(ctx context.Context) (resolvedAudio, error) {
+		a.stopStemMixer(false)
 		a.player.Stop()
 		if err := a.player.SetSpeed(ctx, speed); err != nil {
 			return resolvedAudio{}, err
@@ -116,11 +117,12 @@ func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed
 		if accountProgress && item.IsEpisode() {
 			startAt = max(startAt, episodeProgressPosition(item, found.total))
 		}
-		playURL := found.url
-		if mix := a.stemPlaybackPath(item); mix != "" {
-			playURL = mix
+		found.playErr = a.player.PlayAtContext(ctx, found.url, startAt, false)
+		if found.playErr == nil {
+			if err := a.startStemMixer(item, startAt, true); err != nil {
+				log.Printf("stems: could not start mixer for %s: %v", item.VideoID, err)
+			}
 		}
-		found.playErr = a.player.PlayAtContext(ctx, playURL, startAt, false)
 		return found, nil
 	}, func(found resolvedAudio, err error) {
 		if found.loudnessOK {

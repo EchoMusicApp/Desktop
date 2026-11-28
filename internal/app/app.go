@@ -30,6 +30,7 @@ import (
 	"github.com/EchoMusicApp/Echo-Music/internal/report"
 	"github.com/EchoMusicApp/Echo-Music/internal/sentry"
 	"github.com/EchoMusicApp/Echo-Music/internal/settings"
+	"github.com/EchoMusicApp/Echo-Music/internal/stemplayer"
 	"github.com/EchoMusicApp/Echo-Music/internal/stems"
 	"github.com/EchoMusicApp/Echo-Music/internal/systemmedia"
 	"github.com/EchoMusicApp/Echo-Music/internal/youtube"
@@ -81,6 +82,8 @@ type app struct {
 	stemsTask       task
 	stemsStatus     string
 	stemsDirError   string
+	stemMixer       *stemplayer.Mixer
+	stemMainVolume  float64
 
 	// Opt-in video backdrop for the full-screen player (beta).
 	canvas       *canvas.Service
