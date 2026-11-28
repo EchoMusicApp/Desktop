@@ -67,6 +67,9 @@ type Settings struct {
 	StemsProvider      string            `json:"stemsProvider,omitempty"`
 	StemsDirectory     string            `json:"stemsDirectory,omitempty"`
 	VideoCanvas        bool              `json:"videoCanvas,omitempty"`
+	AutomixBeatAlign   bool              `json:"automixBeatAlign,omitempty"`
+	AutomixHarmonic    bool              `json:"automixHarmonic,omitempty"`
+	AutomixGapless     bool              `json:"automixGapless,omitempty"`
 	PodcastSpeed       float64           `json:"podcastSpeed,omitempty"`
 	MusicSpeed         float64           `json:"musicSpeed,omitempty"`
 	UsagePing          *bool             `json:"usagePing,omitempty"`

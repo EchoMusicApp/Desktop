@@ -167,6 +167,7 @@ func (a *app) audioStarted(item youtube.MusicItem, found resolvedAudio, position
 	if a.settings.VideoCanvas {
 		a.run(func() { a.loadCanvas(item) })
 	}
+	a.analyzeCurrent(item, found.url)
 }
 
 const preloadLead = 20 * time.Second
@@ -186,11 +187,21 @@ func (a *app) following() (int, youtube.MusicItem, bool) {
 	if !ok {
 		return 0, youtube.MusicItem{}, false
 	}
+	if a.settings.AutomixHarmonic && len(a.queue.items) > 1 {
+		candidates := make([]int, 0, 3)
+		for j := i + 1; j < len(a.queue.items) && len(candidates) < 3; j++ {
+			candidates = append(candidates, j)
+		}
+		i = a.harmonicallyNext(i, candidates)
+	}
 	return i, a.queue.at(i), true
 }
 
 func (a *app) syncPreload() {
 	_, next, ok := a.following()
+	if ok {
+		a.analyzeAhead(next)
+	}
 	if ok && a.settings.ExcludeAIGenerated && isMusicTrack(next) && a.aiDisclosure(next) != youtube.AINone {
 		ok = false
 	}

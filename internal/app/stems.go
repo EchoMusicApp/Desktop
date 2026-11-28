@@ -336,6 +336,36 @@ func (a *app) setStemsProvider(provider string) {
 	a.saveSettings()
 }
 
+// stemChipsBar shows the same four toggles in the regular player bar, next
+// to the transport controls and progress bar.
+func (a *app) stemChipsBar(c *ui.Context) {
+	if !a.settings.Stems || a.stems == nil || !a.stems.Cached(a.current.VideoID) {
+		return
+	}
+	sc := m3.Of(c).Scheme
+	ui.Row(c.Key("bar-stem-chips")).Gap(4).Justify(ui.Center).Wrap().Children(func() {
+		for i, name := range stemShortNames {
+			index := i
+			on := a.stemsMask[i]
+			chip := ui.ButtonBase(c.Key("bar-stem-" + name))
+			chip.Height(22).Padding(4, 8).Radius(m3.Full).Gap(4).
+				AlignItems(ui.Center).Cursor(ui.CursorPointer).
+				Background(m3.StateFill(sc.SurfaceContainerHighest.Alpha(0.7), sc.OnSurface, chip.Hovered(), chip.Pressed(), chip.FocusVisible())).
+				Border(1, stemColors[i].Alpha(map[bool]float32{true: 0.95, false: 0.3}[on])).
+				Label("Toggle " + name + " stem")
+			chip.Children(func() {
+				ui.Box(c.Key("bar-stem-dot-" + name)).Width(6).Height(6).Radius(m3.Full).
+					Background(stemColors[i].Alpha(map[bool]float32{true: 1, false: 0.3}[on]))
+				m3.Text(c, m3.LabelSmall, name).TextColor(
+					map[bool]ui.Color{true: sc.OnSurface, false: sc.OnSurfaceVariant}[on])
+			})
+			if chip.Clicked() {
+				a.toggleStem(index)
+			}
+		}
+	})
+}
+
 // stemsCard exposes the beta settings in Playback & Sound.
 func (a *app) stemsCard(c *ui.Context) {
 	sc := m3.Of(c).Scheme

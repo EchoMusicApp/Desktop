@@ -13,6 +13,7 @@ import (
 
 	"github.com/EchoMusicApp/Echo-Music/internal/artwork"
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
+	"github.com/EchoMusicApp/Echo-Music/internal/automix"
 	"github.com/EchoMusicApp/Echo-Music/internal/canvas"
 	"github.com/EchoMusicApp/Echo-Music/internal/cookies"
 	"github.com/EchoMusicApp/Echo-Music/internal/discordrpc"
@@ -85,6 +86,11 @@ type app struct {
 	canvas       *canvas.Service
 	canvasPlayer *ui.VideoPlayer
 	canvasID     string
+
+	// Advanced automix: beat grid, harmonic queue and adaptive pre-arm.
+	automix       *automix.Service
+	beatCurrent   *automix.Result
+	automixStatus string
 
 	run           func(work func())
 	sleep         func(ctx context.Context, delay time.Duration) error

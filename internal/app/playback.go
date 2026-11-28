@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/EchoMusicApp/Echo-Music/internal/audio"
+	"github.com/EchoMusicApp/Echo-Music/internal/automix"
 	"github.com/EchoMusicApp/Echo-Music/internal/lansync"
 	"github.com/EchoMusicApp/Echo-Music/internal/lru"
 	"github.com/EchoMusicApp/Echo-Music/internal/playstate"
@@ -59,7 +60,7 @@ type playback struct {
 
 	suspendedWhilePlaying bool
 
-	resumeID        string
+	resumeID         string
 	episodes         []playstate.Episode
 	episodesHydrated map[string]bool
 	episodeProgress  *episodeProgressSync
@@ -697,6 +698,12 @@ func (a *app) applyCrossfade() {
 	var fade time.Duration
 	if a.settings.Crossfade {
 		fade = time.Duration(settings.ClampCrossfade(a.settings.CrossfadeSeconds)) * time.Second
+	}
+	if a.settings.Crossfade && a.settings.AutomixBeatAlign && a.beatCurrent != nil {
+		fade = time.Duration(automix.BlendDurationMs(a.beatCurrent, 16, 4000, 15000)) * time.Millisecond
+	}
+	if a.settings.Crossfade && a.settings.AutomixGapless {
+		fade = 0
 	}
 	a.player.SetCrossfade(fade)
 }
