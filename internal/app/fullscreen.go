@@ -226,22 +226,7 @@ func (a *app) fullScreenView(c *ui.Context) {
 			ui.Column(c).AlignItems(ui.Center).Gap(4).MaxWidth(640).Children(func() {
 				m3.EmphasizedText(c, m3.HeadlineSmall, a.current.Title).TextColor(ui.RGB(255, 255, 255)).TextAlign(ui.Center).MaxLines(2)
 				m3.Text(c, m3.BodyLarge, shownArtist(a.current)).TextColor(ui.RGB(255, 255, 255).Alpha(0.72)).TextAlign(ui.Center).SingleLine()
-				if !a.settings.Stems {
-					if m3.Button(c, m3.ButtonSpec{
-						Label: "Enable stems", Icon: m3.IconMusicNote,
-						Kind: m3.Tonal, Size: m3.Small40, Key: "fs-enable-stems",
-					}).Clicked() {
-						a.setStems(true)
-					}
-				} else if a.stems != nil && !a.stems.Cached(a.current.VideoID) {
-					if m3.Button(c, m3.ButtonSpec{
-						Label: "Separate this track", Icon: m3.IconDownloadDone,
-						Kind: m3.Tonal, Size: m3.Small40, Key: "fs-separate-stems",
-					}).Clicked() {
-						a.separateCurrent()
-					}
-				}
-				a.stemChips(c)
+				a.stemPanelControls(c)
 			})
 		})
 	})

@@ -202,6 +202,7 @@ type app struct {
 	tools              report.Info
 	toolsLoaded        bool
 	toolsLookup        task
+	toolsStatus        string
 
 	eqApplied  [player.EQBandCount]float64
 	eqDebounce task

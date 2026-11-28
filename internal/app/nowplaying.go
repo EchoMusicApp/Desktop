@@ -273,6 +273,7 @@ func (a *app) nowPlayingMain(c *ui.Context, windowWidth, windowHeight float32) {
 				a.trackLineCentered(c, m3.TitleLarge, m3.BodyMedium, true).Grow(1)
 			})
 			a.scrubber(c)
+			a.stemPanelControls(c)
 			ui.Row(c).FillWidth().Justify(ui.Center).AlignItems(ui.Center).Gap(transportGap).Children(func() {
 				a.likeButton(c)
 				a.transport(c, transportSize, transportGap)
@@ -376,7 +377,7 @@ func (a *app) renderDeviceMenu(c *ui.Context, anchor ui.Element, open *bool, key
 	sc := m3.Of(c).Scheme
 	devices, _ := getAudioOutputDevices()
 	m3.Menu(c, anchor, open, 276, func() {
-		ui.Column(c.Key(key + "-list")).Padding(4, 0).Gap(2).Children(func() {
+		ui.Column(c.Key(key+"-list")).Padding(4, 0).Gap(2).Children(func() {
 			ui.Row(c).Padding(6, 14, 4, 14).Children(func() {
 				m3.Text(c, m3.LabelSmall, "THIS MAC").TextColor(sc.OnSurfaceVariant).FontFeatures("case")
 			})

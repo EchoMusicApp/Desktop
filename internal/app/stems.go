@@ -336,6 +336,30 @@ func (a *app) setStemsProvider(provider string) {
 	a.saveSettings()
 }
 
+// stemPanelControls gives the player panel a single entry point: enable the
+// beta, separate the current song, or show the four toggles.
+func (a *app) stemPanelControls(c *ui.Context) {
+	if !a.settings.Stems {
+		if m3.Button(c, m3.ButtonSpec{
+			Label: "Enable stems", Icon: m3.IconMusicNote,
+			Kind: m3.Tonal, Size: m3.Small40, Key: "np-enable-stems",
+		}).Clicked() {
+			a.setStems(true)
+		}
+		return
+	}
+	if a.stems == nil || !a.stems.Cached(a.current.VideoID) {
+		if m3.Button(c, m3.ButtonSpec{
+			Label: "Separate this track", Icon: m3.IconDownloadDone,
+			Kind: m3.Tonal, Size: m3.Small40, Key: "np-separate-stems",
+		}).Clicked() {
+			a.separateCurrent()
+		}
+		return
+	}
+	a.stemChips(c)
+}
+
 // stemChipsBar shows the same four toggles in the regular player bar, next
 // to the transport controls and progress bar.
 func (a *app) stemChipsBar(c *ui.Context) {
